@@ -18,6 +18,8 @@ The interface currently demonstrates:
 - individual, pasted-row and CSV member onboarding previews;
 - departments, offices, courses, classes and project groups;
 - scoped authority assignments and audience selection;
+- creator and authorized-leader publishing with organization, group, individual and exclusion targeting;
+- recipient resolution, unread SMS fallback choices and a final review step;
 - honest empty, error and success states;
 - responsive desktop and mobile layouts;
 - a PostgreSQL/Supabase multi-tenant schema and row-level security tests;

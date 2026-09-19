@@ -8,6 +8,8 @@ This repository contains the first production-oriented backend foundation. It is
 - Explicit Data API grants and Row Level Security on every application table.
 - Organization bootstrap logic that creates the first owner membership.
 - Tenant-aware memberships, groups, authority grants, announcements, recipients, read receipts, delivery attempts, imports, SMS ledger entries and audit events.
+- Flexible announcement audiences covering the full organization, groups, specific members and member exclusions.
+- A protected publish endpoint that resolves and snapshots recipients only after rechecking the caller's tenant role and group authority.
 - A private organization-logo bucket with membership and owner policies.
 - Browser/server Supabase client factories and an OAuth callback route.
 - pgTAP catalogue tests under `supabase/tests/`.
@@ -73,10 +75,10 @@ Docker is not installed on the current workstation, so the migration and pgTAP t
 - Organization codes are login/discovery aids only.
 - `service_role` credentials belong only in trusted server or worker code.
 - Authorization helpers live in a non-exposed `private` schema and explicitly check `auth.uid()`.
-- Every outbound announcement will snapshot its recipients so later group changes cannot rewrite history.
+- Every outbound announcement snapshots its recipients so later group changes cannot rewrite history.
 - SMS fallback will be based on a missing read receipt after a configured interval, not an unreliable claim that the recipient is offline.
 - Provider callbacks must be signature-validated, idempotent and stored as delivery attempts.
 
 ## Next implementation slice
 
-After local PostgreSQL verification, connect the welcome screen to Supabase Auth, create the organization onboarding transaction, and replace the frontend preview arrays with database queries. Do not connect SMS until tenant and authority policy tests pass.
+After local PostgreSQL verification, connect the welcome screen to Supabase Auth, create the organization onboarding transaction, and replace the frontend preview arrays with authenticated database queries. Keep live SMS disabled until tenant, authority and audience policy tests pass.

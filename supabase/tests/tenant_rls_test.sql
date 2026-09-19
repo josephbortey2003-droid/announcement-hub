@@ -1,10 +1,10 @@
 BEGIN;
-SELECT plan(9);
+SELECT plan(11);
 
 select is(
   (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity),
-  17,
-  'all 17 application tables have RLS enabled'
+  19,
+  'all 19 application tables have RLS enabled'
 );
 
 select is(
@@ -56,6 +56,18 @@ select ok(
   exists(select 1 from pg_indexes where schemaname='public' and indexname='delivery_attempts_status_poll_idx') and
   exists(select 1 from pg_indexes where schemaname='public' and indexname='sms_ledger_provider_charge_idx'),
   'SMS attempts are idempotent and queued attempts are indexed for polling'
+);
+
+select ok(
+  exists(select 1 from pg_policies where schemaname='public' and tablename='announcement_individual_audiences' and policyname='announcement_individual_publisher_select') and
+  exists(select 1 from pg_policies where schemaname='public' and tablename='announcement_exclusions' and policyname='announcement_exclusions_publisher_select'),
+  'individual audiences and exclusions are visible only to publishers'
+);
+
+select ok(
+  exists(select 1 from information_schema.table_constraints where constraint_schema='public' and constraint_name='announcement_audiences_group_org_fk') and
+  exists(select 1 from information_schema.table_constraints where constraint_schema='public' and constraint_name='recipient_deliveries_membership_org_fk'),
+  'audience and delivery references cannot cross tenant boundaries'
 );
 
 SELECT * FROM finish();
