@@ -1,10 +1,10 @@
 BEGIN;
-SELECT plan(7);
+SELECT plan(9);
 
 select is(
   (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity),
-  16,
-  'all 16 application tables have RLS enabled'
+  17,
+  'all 17 application tables have RLS enabled'
 );
 
 select is(
@@ -42,6 +42,20 @@ select ok(
   exists(select 1 from pg_policies where schemaname='public' and tablename='groups' and policyname='groups_owner_all') and
   exists(select 1 from pg_policies where schemaname='public' and tablename='recipient_deliveries' and policyname='recipient_delivery_self_select'),
   'owner and recipient isolation policies exist'
+);
+
+select ok(
+  exists(select 1 from pg_policies where schemaname='public' and tablename='organization_sms_settings' and policyname='organization_sms_settings_owner_select') and
+  not has_table_privilege('anon','public.organization_sms_settings','SELECT') and
+  has_table_privilege('authenticated','public.organization_sms_settings','SELECT'),
+  'SMS settings are owner-readable and unavailable anonymously'
+);
+
+select ok(
+  exists(select 1 from pg_indexes where schemaname='public' and indexname='delivery_attempts_sms_once_idx') and
+  exists(select 1 from pg_indexes where schemaname='public' and indexname='delivery_attempts_status_poll_idx') and
+  exists(select 1 from pg_indexes where schemaname='public' and indexname='sms_ledger_provider_charge_idx'),
+  'SMS attempts are idempotent and queued attempts are indexed for polling'
 );
 
 SELECT * FROM finish();

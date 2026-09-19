@@ -16,9 +16,10 @@ The interface currently demonstrates:
 - scoped authority assignments and audience selection;
 - honest empty, error and success states;
 - responsive desktop and mobile layouts;
-- a PostgreSQL/Supabase multi-tenant schema and row-level security tests.
+- a PostgreSQL/Supabase multi-tenant schema and row-level security tests;
+- a disabled-by-default, server-side Hubtel SMS adapter with delivery status and cost recording.
 
-Authentication, persistent production data, WhatsApp delivery, SMS delivery and billing are not presented as active features. They require configured external services and completed security verification.
+Authentication, persistent production data, WhatsApp delivery and live billing are not presented as active features. Real SMS delivery remains disabled until Hubtel and Supabase credentials, sender approval, test recipients and organization limits are configured.
 
 ## Run locally
 
@@ -40,9 +41,11 @@ Open `http://localhost:5173`.
 ```bash
 npm run lint
 npm run build
+npm run test:sms
 ```
 
 Database commands and setup instructions are documented in [docs/backend-setup.md](docs/backend-setup.md).
+Hubtel activation and verification are documented in [docs/hubtel-sms-setup.md](docs/hubtel-sms-setup.md).
 
 ## Environment configuration
 
