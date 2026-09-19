@@ -191,15 +191,16 @@ img,svg,video,canvas{max-width:100%}
   --brand-gradient-hover:linear-gradient(125deg,color-mix(in srgb,var(--org-primary) 70%,#071c18),color-mix(in srgb,var(--org-secondary) 70%,#071c18));
   --brand-readable:color-mix(in srgb,color-mix(in srgb,var(--org-primary) 50%,var(--org-secondary)) 28%,#071c18);
   --brand-focus:color-mix(in srgb,color-mix(in srgb,var(--org-primary) 50%,var(--org-secondary)) 38%,#071c18);
-  --brand-canvas:color-mix(in srgb,var(--org-primary) 4%,color-mix(in srgb,var(--org-secondary) 4%,#f5f8f6));
-  --brand-surface:color-mix(in srgb,var(--org-primary) 2%,color-mix(in srgb,var(--org-secondary) 2%,#fff));
-  --brand-surface-strong:color-mix(in srgb,var(--org-primary) 8%,color-mix(in srgb,var(--org-secondary) 8%,#fff));
-  --brand-line:color-mix(in srgb,var(--org-primary) 14%,color-mix(in srgb,var(--org-secondary) 14%,#d8dfdb));
+  --brand-canvas:color-mix(in srgb,var(--org-primary) 3%,color-mix(in srgb,var(--org-secondary) 3%,#edf3f0));
+  --brand-surface:color-mix(in srgb,var(--org-primary) 1.5%,color-mix(in srgb,var(--org-secondary) 1.5%,#f8faf9));
+  --brand-surface-strong:color-mix(in srgb,var(--org-primary) 6%,color-mix(in srgb,var(--org-secondary) 6%,#e5ede9));
+  --brand-field:color-mix(in srgb,var(--org-primary) 1%,color-mix(in srgb,var(--org-secondary) 1%,#fff));
+  --brand-line:color-mix(in srgb,var(--org-primary) 12%,color-mix(in srgb,var(--org-secondary) 12%,#becbc4));
   --blue-soft:var(--brand-surface-strong);
   --canvas:var(--brand-canvas);--surface:var(--brand-surface);--line:var(--brand-line)
 }
-.welcome-shell[data-theme="light"]{--canvas:#f6faf8;--surface:#fff;--ink:#15231e;--muted:#56675f;--line:#d8e1dc;color-scheme:light}
-.app-shell[data-theme="light"]{--ink:#15231e;--muted:#56675f;--canvas:var(--brand-canvas);--surface:var(--brand-surface);--line:var(--brand-line);color-scheme:light;color:var(--ink)}
+.welcome-shell[data-theme="light"]{--canvas:#edf3f0;--surface:#f8faf9;--ink:#17211d;--muted:#53645b;--line:#c4d0ca;color-scheme:light}
+.app-shell[data-theme="light"]{--ink:#17211d;--muted:#53645b;--canvas:var(--brand-canvas);--surface:var(--brand-surface);--line:var(--brand-line);color-scheme:light;color:var(--ink)}
 .app-shell,.app-shell .content-shell{background:var(--brand-canvas)}
 .app-shell .sidebar,.app-shell .setup-card>.setup-summary,.app-shell .brand-preview{background:var(--brand-gradient-deep);color:#fff}
 .app-shell .brand-preview small,.app-shell .setup-card>.setup-summary p,.app-shell .setup-card>.setup-summary span{color:#e2ece8}
@@ -216,6 +217,16 @@ img,svg,video,canvas{max-width:100%}
 .app-shell .brand-preview{box-shadow:inset 0 0 0 1px #ffffff22,0 12px 28px color-mix(in srgb,var(--org-primary) 18%,transparent)}
 .gradient-sample{grid-column:1/-1;min-height:74px;padding:14px;display:flex;align-items:flex-end;border-radius:9px;box-shadow:inset 0 0 0 1px #ffffff35}
 .gradient-sample span{margin:0!important;padding:5px 8px;border-radius:5px;background:#071c18b8;color:#fff;font-size:11px!important;font-weight:600!important;backdrop-filter:blur(6px)}
+
+/* Light mode uses distinct, low-glare layers instead of bright white panels. */
+.app-shell[data-theme="light"] :is(.empty-state,.data-panel,.honest-grid article,.billing-explainer,.brand-settings,.scope-card,.preference-list,.composer-page,.setup-card,.setup-accordion,.workspace-card,.announcement-list,.summary-strip,.summary-stat,.composer,.toast){border-color:var(--brand-line);background:var(--brand-surface);color:var(--ink);box-shadow:0 1px 2px #10271d0a}
+.app-shell[data-theme="light"] :is(input,select,textarea,.filter-row>div,.secondary,.method-tabs button,.audience-options button,.icon-button){border-color:var(--brand-line);background:var(--brand-field);color:var(--ink)}
+.app-shell[data-theme="light"] :is(.filter-row,.table-head,.cost-note,.credit-summary,.prototype-access){background:var(--brand-surface-strong);color:var(--ink)}
+.app-shell[data-theme="light"] :is(.data-head,.data-row,.authority-card,.preference-list label,.workspace-footer,.setup-step,.member-directory th,.member-directory tr,.page-header){border-color:var(--brand-line)}
+.app-shell[data-theme="light"] .empty-state{background:linear-gradient(145deg,var(--brand-surface),var(--brand-surface-strong));border-style:solid}
+.app-shell[data-theme="light"] .empty-state>span{background:var(--brand-field);box-shadow:inset 0 0 0 1px var(--brand-line)}
+.app-shell[data-theme="light"] .page-header h1,.app-shell[data-theme="light"] .empty-state h2,.app-shell[data-theme="light"] h2,.app-shell[data-theme="light"] strong{color:var(--ink)}
+.app-shell[data-theme="light"] .workspace-footer{color:#52655b}
 
 /* Dark mode is a separate elevation system, not a color inversion. */
 .welcome-shell[data-theme="dark"]{--canvas:#101613;--surface:#19221e;--surface-raised:#202b26;--ink:#e8efeb;--muted:#a9b6af;--line:#34433c}
