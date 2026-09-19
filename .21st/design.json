@@ -1,0 +1,200 @@
+{
+  "version": 1,
+  "project": {
+    "name": "announcement-hub",
+    "productType": "multi-tenant organizational communications platform",
+    "stack": [
+      "nextjs",
+      "react",
+      "shadcn",
+      "tailwind-v4",
+      "vite"
+    ]
+  },
+  "sources": {
+    "tokens": [
+      "app/globals.css"
+    ],
+    "components": [
+      "components/ui"
+    ],
+    "assets": [],
+    "instructions": []
+  },
+  "design": {
+    "colorMode": "light-and-dark",
+    "colors": {
+      "--muted": {
+        "value": "#aab6be",
+        "source": "app/globals.css"
+      },
+      "--org-primary": {
+        "value": "#176b91",
+        "source": "app/globals.css"
+      },
+      "--org-secondary": {
+        "value": "#d6ad43",
+        "source": "app/globals.css"
+      },
+      "--org-on-primary": {
+        "value": "#fff",
+        "source": "app/globals.css"
+      },
+      "--org-on-secondary": {
+        "value": "#071c2d",
+        "source": "app/globals.css"
+      }
+    },
+    "typography": {
+      "interface": "IBM Plex Sans",
+      "technical": "IBM Plex Mono"
+    },
+    "spacing": {
+      "base": "4px",
+      "contentRhythm": "8px scale"
+    },
+    "radius": {
+      "controls": "7px to 10px",
+      "panels": "12px to 14px",
+      "organizationLogo": "circle"
+    },
+    "shadows": {
+      "usage": "restrained depth on elevated panels only"
+    },
+    "motion": {
+      "usage": "subtle state transitions with reduced-motion support"
+    },
+    "density": "comfortable-enterprise"
+  },
+  "components": {
+    "installed": [
+      "accordion",
+      "alert",
+      "alert-dialog",
+      "aspect-ratio",
+      "attachment",
+      "avatar",
+      "badge",
+      "breadcrumb",
+      "bubble",
+      "button",
+      "button-group",
+      "calendar",
+      "card",
+      "carousel",
+      "chart",
+      "checkbox",
+      "collapsible",
+      "combobox",
+      "command",
+      "context-menu",
+      "dialog",
+      "direction",
+      "drawer",
+      "dropdown-menu",
+      "empty",
+      "field",
+      "form",
+      "hover-card",
+      "input",
+      "input-group",
+      "input-otp",
+      "item",
+      "kbd",
+      "label",
+      "marker",
+      "menubar",
+      "message",
+      "message-scroller",
+      "native-select",
+      "navigation-menu",
+      "pagination",
+      "popover",
+      "progress",
+      "radio-group",
+      "resizable",
+      "scroll-area",
+      "select",
+      "separator",
+      "sheet",
+      "sidebar",
+      "skeleton",
+      "slider",
+      "sonner",
+      "spinner",
+      "switch",
+      "table",
+      "tabs",
+      "textarea",
+      "toggle",
+      "toggle-group",
+      "tooltip"
+    ],
+    "preferredPrimitives": [],
+    "patterns": []
+  },
+  "constraints": {
+    "must": [
+      "Announcement Hub platform identity uses emerald gradients and white",
+      "Organization workspaces use the creator-selected primary and secondary colors throughout the full dashboard",
+      "Organization logos render in circular frames",
+      "Light, dark, and device-default color modes remain available",
+      "All UI remains responsive, keyboard accessible, and honest about unavailable backend data",
+      "Preserve role-specific creator, authority, and member experiences"
+    ],
+    "avoid": [
+      "Purple gradients",
+      "Pill-shaped primary buttons",
+      "Fake metrics, reviews, delivery states, or customer counters",
+      "Emoji icons",
+      "Decorative cursor effects or excessive scroll animation",
+      "Generic dashboard templates that erase organization branding",
+      "Adding parallel components when a project primitive already exists"
+    ]
+  },
+  "decisions": [
+    {
+      "decision": "Separate platform identity from tenant identity",
+      "reason": "Announcement Hub remains recognizably emerald and white while each organization controls its own dashboard palette."
+    },
+    {
+      "decision": "Use a restrained enterprise interface rather than decorative showcase UI",
+      "reason": "The product handles official organizational communication and must prioritize clarity, trust, scope, and delivery status."
+    }
+  ],
+  "evidence": [
+    {
+      "fact": "components.installed",
+      "source": "components/ui"
+    },
+    {
+      "fact": "design.colorMode:light-and-dark",
+      "source": "app/globals.css"
+    },
+    {
+      "fact": "design.tokens",
+      "source": "app/globals.css"
+    },
+    {
+      "fact": "project.stack:nextjs",
+      "source": "package.json"
+    },
+    {
+      "fact": "project.stack:react",
+      "source": "package.json"
+    },
+    {
+      "fact": "project.stack:shadcn",
+      "source": "components.json"
+    },
+    {
+      "fact": "project.stack:tailwind-v4",
+      "source": "package.json"
+    },
+    {
+      "fact": "project.stack:vite",
+      "source": "package.json"
+    }
+  ],
+  "generatedAt": "2026-09-19T01:09:23.577Z"
+}
