@@ -198,6 +198,8 @@ img,svg,video,canvas{max-width:100%}
   --blue-soft:var(--brand-surface-strong);
   --canvas:var(--brand-canvas);--surface:var(--brand-surface);--line:var(--brand-line)
 }
+.welcome-shell[data-theme="light"]{--canvas:#f6faf8;--surface:#fff;--ink:#15231e;--muted:#56675f;--line:#d8e1dc;color-scheme:light}
+.app-shell[data-theme="light"]{--ink:#15231e;--muted:#56675f;--canvas:var(--brand-canvas);--surface:var(--brand-surface);--line:var(--brand-line);color-scheme:light;color:var(--ink)}
 .app-shell,.app-shell .content-shell{background:var(--brand-canvas)}
 .app-shell .sidebar,.app-shell .setup-card>.setup-summary,.app-shell .brand-preview{background:var(--brand-gradient-deep);color:#fff}
 .app-shell .brand-preview small,.app-shell .setup-card>.setup-summary p,.app-shell .setup-card>.setup-summary span{color:#e2ece8}
