@@ -2,7 +2,11 @@
 
 Announcement Hub is a multi-tenant organizational communications platform for official, role-scoped announcements. It is being developed as a final-year project.
 
-[Open the current web preview](https://announcement-hub.josephbortey2003.chatgpt.site/)
+[Open the GitHub Pages preview](https://josephbortey2003-droid.github.io/announcement-hub/)
+
+The GitHub Pages deployment is a public interface preview. Server features such
+as authentication, Supabase persistence and Hubtel delivery require a full-stack
+deployment and are intentionally inactive on GitHub Pages.
 
 ## Current prototype
 
