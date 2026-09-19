@@ -189,6 +189,8 @@ img,svg,video,canvas{max-width:100%}
   --brand-gradient:linear-gradient(125deg,var(--org-primary),var(--org-secondary));
   --brand-gradient-deep:linear-gradient(125deg,color-mix(in srgb,var(--org-primary) 58%,#071c18),color-mix(in srgb,var(--org-secondary) 58%,#071c18));
   --brand-gradient-hover:linear-gradient(125deg,color-mix(in srgb,var(--org-primary) 70%,#071c18),color-mix(in srgb,var(--org-secondary) 70%,#071c18));
+  --brand-readable:color-mix(in srgb,color-mix(in srgb,var(--org-primary) 50%,var(--org-secondary)) 28%,#071c18);
+  --brand-focus:color-mix(in srgb,color-mix(in srgb,var(--org-primary) 50%,var(--org-secondary)) 38%,#071c18);
   --brand-canvas:color-mix(in srgb,var(--org-primary) 4%,color-mix(in srgb,var(--org-secondary) 4%,#f5f8f6));
   --brand-surface:color-mix(in srgb,var(--org-primary) 2%,color-mix(in srgb,var(--org-secondary) 2%,#fff));
   --brand-surface-strong:color-mix(in srgb,var(--org-primary) 8%,color-mix(in srgb,var(--org-secondary) 8%,#fff));
@@ -205,6 +207,9 @@ img,svg,video,canvas{max-width:100%}
 .app-shell .nav-item.active{border-left-color:#fff;background:linear-gradient(110deg,#ffffff2e,#ffffff14);color:#fff;font-weight:600}
 .app-shell .primary-action,.app-shell .mobile-fab{border-color:transparent;background:var(--brand-gradient-deep);color:#fff}
 .app-shell .primary-action:hover{border-color:transparent;background:var(--brand-gradient-hover)}
+.app-shell :is(.page-header>div:first-child>p,.text-action,.authority-card svg,.billing-explainer>svg,.honest-grid svg,.scope-card>svg,.record-status,.member-name [data-slot="avatar-fallback"],.empty-state>span){color:var(--brand-readable)}
+.app-shell :is(.audience-options button.selected,.method-tabs button.active){border-color:var(--brand-focus);color:var(--brand-readable)}
+.app-shell button:focus-visible,.app-shell input:focus-visible,.app-shell select:focus-visible,.app-shell textarea:focus-visible{outline-color:var(--brand-focus)}
 .app-shell .setup-progress i,.app-shell .step-number.done,.app-shell .setup-step.done .step-number{background:var(--brand-gradient);color:#fff}
 .app-shell .brand-preview{box-shadow:inset 0 0 0 1px #ffffff22,0 12px 28px color-mix(in srgb,var(--org-primary) 18%,transparent)}
 .gradient-sample{grid-column:1/-1;min-height:74px;padding:14px;display:flex;align-items:flex-end;border-radius:9px;box-shadow:inset 0 0 0 1px #ffffff35}
@@ -212,7 +217,7 @@ img,svg,video,canvas{max-width:100%}
 
 /* Dark mode is a separate elevation system, not a color inversion. */
 .welcome-shell[data-theme="dark"]{--canvas:#101613;--surface:#19221e;--surface-raised:#202b26;--ink:#e8efeb;--muted:#a9b6af;--line:#34433c}
-.app-shell[data-theme="dark"]{--ink:#e8efeb;--muted:#a9b6af;--brand-canvas:color-mix(in srgb,var(--org-primary) 5%,color-mix(in srgb,var(--org-secondary) 5%,#101613));--brand-surface:color-mix(in srgb,var(--org-primary) 3%,color-mix(in srgb,var(--org-secondary) 3%,#19221e));--brand-surface-strong:color-mix(in srgb,var(--org-primary) 7%,color-mix(in srgb,var(--org-secondary) 7%,#222d28));--brand-line:color-mix(in srgb,var(--org-primary) 12%,color-mix(in srgb,var(--org-secondary) 12%,#3a4942));--canvas:var(--brand-canvas);--surface:var(--brand-surface);--line:var(--brand-line);--blue-soft:var(--brand-surface-strong)}
+.app-shell[data-theme="dark"]{--ink:#e8efeb;--muted:#a9b6af;--brand-readable:color-mix(in srgb,color-mix(in srgb,var(--org-primary) 50%,var(--org-secondary)) 24%,#dcebe5);--brand-focus:color-mix(in srgb,color-mix(in srgb,var(--org-primary) 50%,var(--org-secondary)) 38%,#dcebe5);--brand-canvas:color-mix(in srgb,var(--org-primary) 5%,color-mix(in srgb,var(--org-secondary) 5%,#101613));--brand-surface:color-mix(in srgb,var(--org-primary) 3%,color-mix(in srgb,var(--org-secondary) 3%,#19221e));--brand-surface-strong:color-mix(in srgb,var(--org-primary) 7%,color-mix(in srgb,var(--org-secondary) 7%,#222d28));--brand-line:color-mix(in srgb,var(--org-primary) 12%,color-mix(in srgb,var(--org-secondary) 12%,#3a4942));--canvas:var(--brand-canvas);--surface:var(--brand-surface);--line:var(--brand-line);--blue-soft:var(--brand-surface-strong)}
 
 .welcome-shell[data-theme="dark"] :is(.role-list,.role-row,.access-panel,.oauth-button,input,.prototype-access,.role-icon),
 .app-shell[data-theme="dark"] :is(.empty-state,.data-panel,.honest-grid article,.billing-explainer,.brand-settings,.scope-card,.preference-list,.composer-page,.setup-card,.setup-accordion,.workspace-card,.announcement-list,.summary-strip,.summary-stat,.filter-row,.filter-row>div,.icon-button,.composer,.secondary,.method-tabs button,.audience-options button,input,select,textarea,.toast){border-color:var(--line);background:var(--surface);color:var(--ink)}
@@ -224,7 +229,7 @@ img,svg,video,canvas{max-width:100%}
 
 @media(prefers-color-scheme:dark){
   .welcome-shell[data-theme="system"]{--canvas:#101613;--surface:#19221e;--surface-raised:#202b26;--ink:#e8efeb;--muted:#a9b6af;--line:#34433c}
-  .app-shell[data-theme="system"]{--ink:#e8efeb;--muted:#a9b6af;--brand-canvas:color-mix(in srgb,var(--org-primary) 5%,color-mix(in srgb,var(--org-secondary) 5%,#101613));--brand-surface:color-mix(in srgb,var(--org-primary) 3%,color-mix(in srgb,var(--org-secondary) 3%,#19221e));--brand-surface-strong:color-mix(in srgb,var(--org-primary) 7%,color-mix(in srgb,var(--org-secondary) 7%,#222d28));--brand-line:color-mix(in srgb,var(--org-primary) 12%,color-mix(in srgb,var(--org-secondary) 12%,#3a4942));--canvas:var(--brand-canvas);--surface:var(--brand-surface);--line:var(--brand-line);--blue-soft:var(--brand-surface-strong)}
+  .app-shell[data-theme="system"]{--ink:#e8efeb;--muted:#a9b6af;--brand-readable:color-mix(in srgb,color-mix(in srgb,var(--org-primary) 50%,var(--org-secondary)) 24%,#dcebe5);--brand-focus:color-mix(in srgb,color-mix(in srgb,var(--org-primary) 50%,var(--org-secondary)) 38%,#dcebe5);--brand-canvas:color-mix(in srgb,var(--org-primary) 5%,color-mix(in srgb,var(--org-secondary) 5%,#101613));--brand-surface:color-mix(in srgb,var(--org-primary) 3%,color-mix(in srgb,var(--org-secondary) 3%,#19221e));--brand-surface-strong:color-mix(in srgb,var(--org-primary) 7%,color-mix(in srgb,var(--org-secondary) 7%,#222d28));--brand-line:color-mix(in srgb,var(--org-primary) 12%,color-mix(in srgb,var(--org-secondary) 12%,#3a4942));--canvas:var(--brand-canvas);--surface:var(--brand-surface);--line:var(--brand-line);--blue-soft:var(--brand-surface-strong)}
   .welcome-shell[data-theme="system"] :is(.role-list,.role-row,.access-panel,.oauth-button,input,.prototype-access,.role-icon),
   .app-shell[data-theme="system"] :is(.empty-state,.data-panel,.honest-grid article,.billing-explainer,.brand-settings,.scope-card,.preference-list,.composer-page,.setup-card,.setup-accordion,.workspace-card,.announcement-list,.summary-strip,.summary-stat,.filter-row,.filter-row>div,.icon-button,.composer,.secondary,.method-tabs button,.audience-options button,input,select,textarea,.toast){border-color:var(--line);background:var(--surface);color:var(--ink)}
   .app-shell[data-theme="system"] :is(.data-head,.data-row,.authority-card,.preference-list label,.workspace-footer,.setup-step,.member-directory th,.member-directory tr){border-color:var(--line)}
