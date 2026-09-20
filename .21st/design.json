@@ -164,6 +164,10 @@
     {
       "decision": "Use an organization identity bar and thumb-zone tab navigation on phones",
       "reason": "Mobile users can identify the active organization and reach their three most frequent role-specific destinations without opening the full administration drawer."
+    },
+    {
+      "decision": "Use a restrained animated tenant-color canvas behind stable tinted surfaces",
+      "reason": "Organization colors remain visible throughout light mode without placing text directly over moving gradients; motion is limited to a decorative layer and respects reduced-motion preferences."
     }
   ],
   "evidence": [

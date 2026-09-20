@@ -189,21 +189,27 @@ img,svg,video,canvas{max-width:100%}
   --brand-gradient:linear-gradient(125deg,var(--org-primary),var(--org-secondary));
   --brand-gradient-deep:linear-gradient(125deg,color-mix(in srgb,var(--org-primary) 58%,#071c18),color-mix(in srgb,var(--org-secondary) 58%,#071c18));
   --brand-gradient-hover:linear-gradient(125deg,color-mix(in srgb,var(--org-primary) 70%,#071c18),color-mix(in srgb,var(--org-secondary) 70%,#071c18));
+  --brand-gradient-shell:radial-gradient(circle at 16% 8%,color-mix(in srgb,var(--org-secondary) 38%,transparent),transparent 34%),linear-gradient(155deg,color-mix(in srgb,var(--org-primary) 64%,#071c18),color-mix(in srgb,var(--org-primary) 42%,#071c18) 52%,color-mix(in srgb,var(--org-secondary) 52%,#071c18));
   --brand-readable:color-mix(in srgb,color-mix(in srgb,var(--org-primary) 50%,var(--org-secondary)) 28%,#071c18);
   --brand-focus:color-mix(in srgb,color-mix(in srgb,var(--org-primary) 50%,var(--org-secondary)) 38%,#071c18);
-  --brand-canvas:color-mix(in srgb,var(--org-primary) 3%,color-mix(in srgb,var(--org-secondary) 3%,#edf3f0));
-  --brand-surface:color-mix(in srgb,var(--org-primary) 1.5%,color-mix(in srgb,var(--org-secondary) 1.5%,#f8faf9));
-  --brand-surface-strong:color-mix(in srgb,var(--org-primary) 6%,color-mix(in srgb,var(--org-secondary) 6%,#e5ede9));
-  --brand-field:color-mix(in srgb,var(--org-primary) 1%,color-mix(in srgb,var(--org-secondary) 1%,#fff));
-  --brand-line:color-mix(in srgb,var(--org-primary) 12%,color-mix(in srgb,var(--org-secondary) 12%,#becbc4));
+  --brand-canvas:color-mix(in srgb,var(--org-primary) 10%,color-mix(in srgb,var(--org-secondary) 8%,#e7f0eb));
+  --brand-surface:color-mix(in srgb,var(--org-primary) 5%,color-mix(in srgb,var(--org-secondary) 5%,#f4f8f5));
+  --brand-surface-strong:color-mix(in srgb,var(--org-primary) 11%,color-mix(in srgb,var(--org-secondary) 10%,#dce8e1));
+  --brand-field:color-mix(in srgb,var(--org-primary) 3%,color-mix(in srgb,var(--org-secondary) 3%,#f8fbf9));
+  --brand-line:color-mix(in srgb,var(--org-primary) 18%,color-mix(in srgb,var(--org-secondary) 15%,#aebfb5));
+  --brand-ambient-primary:color-mix(in srgb,var(--org-primary) 58%,transparent);
+  --brand-ambient-secondary:color-mix(in srgb,var(--org-secondary) 52%,transparent);
   --blue-soft:var(--brand-surface-strong);
   --canvas:var(--brand-canvas);--surface:var(--brand-surface);--line:var(--brand-line)
 }
 .welcome-shell[data-theme="light"]{--canvas:#edf3f0;--surface:#f8faf9;--ink:#17211d;--muted:#53645b;--line:#c4d0ca;color-scheme:light}
 .app-shell[data-theme="light"]{--ink:#17211d;--muted:#53645b;--canvas:var(--brand-canvas);--surface:var(--brand-surface);--line:var(--brand-line);color-scheme:light;color:var(--ink)}
-.app-shell,.app-shell .content-shell{background:var(--brand-canvas)}
-.app-shell .sidebar,.app-shell .setup-card>.setup-summary,.app-shell .brand-preview{background:var(--brand-gradient-deep);color:#fff}
+.app-shell{position:relative;isolation:isolate;overflow-x:clip;background:var(--brand-canvas)}
+.app-shell:before{content:"";position:fixed;z-index:-1;inset:-22%;pointer-events:none;background:radial-gradient(ellipse 42% 36% at 16% 24%,var(--brand-ambient-primary),transparent 72%),radial-gradient(ellipse 40% 34% at 82% 18%,var(--brand-ambient-secondary),transparent 74%),radial-gradient(ellipse 48% 42% at 68% 88%,color-mix(in srgb,var(--org-primary) 34%,var(--brand-ambient-secondary)),transparent 76%);opacity:.34;transform:translate3d(-2%,0,0) rotate(-2deg);will-change:transform,opacity}
+.app-shell .content-shell{position:relative;z-index:1;background:transparent}
+.app-shell .sidebar,.app-shell .setup-card>.setup-summary,.app-shell .brand-preview{background:var(--brand-gradient-shell);color:#fff}
 .app-shell .brand-preview small,.app-shell .setup-card>.setup-summary p,.app-shell .setup-card>.setup-summary span{color:#e2ece8}
+.app-shell .setup-card>.setup-accordion p{color:var(--muted)}
 .app-shell .org-identity{border-color:#ffffff30;background:#071c1838;backdrop-filter:blur(10px)}
 .app-shell .sidebar .mark-icon{background:var(--brand-gradient);color:#fff}
 .app-shell .nav-item:hover{background:#ffffff12;color:#fff}
@@ -227,6 +233,8 @@ img,svg,video,canvas{max-width:100%}
 .app-shell[data-theme="light"] .empty-state>span{background:var(--brand-field);box-shadow:inset 0 0 0 1px var(--brand-line)}
 .app-shell[data-theme="light"] .page-header h1,.app-shell[data-theme="light"] .empty-state h2,.app-shell[data-theme="light"] h2,.app-shell[data-theme="light"] strong{color:var(--ink)}
 .app-shell[data-theme="light"] .workspace-footer{color:#52655b}
+.app-shell[data-theme="light"] :is(.empty-state,.data-panel,.honest-grid article,.billing-explainer,.brand-settings,.scope-card,.preference-list,.composer-page,.setup-card,.workspace-card,.announcement-list){box-shadow:0 14px 34px color-mix(in srgb,var(--org-primary) 12%,transparent),inset 0 1px #ffffff80}
+.app-shell[data-theme="light"] :is(.mobile-app-bar,.sidebar,.setup-summary,.brand-preview) :is(h1,h2,h3,strong){color:#fff}
 
 /* Dark mode is a separate elevation system, not a color inversion. */
 .welcome-shell[data-theme="dark"]{--canvas:#101613;--surface:#19221e;--surface-raised:#202b26;--ink:#e8efeb;--muted:#a9b6af;--line:#34433c}
@@ -372,4 +380,27 @@ img,svg,video,canvas{max-width:100%}
   .mobile-tab-bar button{font-size:9px}
   .content-shell{padding-right:12px;padding-left:12px}
   .member-directory tr{margin-right:10px;margin-left:10px}
+}
+
+@keyframes organization-color-flow{
+  0%{transform:translate3d(-3%,-1%,0) rotate(-2deg);opacity:.28}
+  50%{transform:translate3d(3%,2%,0) rotate(2deg);opacity:.4}
+  100%{transform:translate3d(-1%,4%,0) rotate(-1deg);opacity:.32}
+}
+.app-shell[data-theme="dark"]:before{opacity:.1;transform:none}
+@media(prefers-color-scheme:dark){.app-shell[data-theme="system"]:before{opacity:.1;transform:none}}
+@media(prefers-reduced-motion:no-preference){.app-shell[data-theme="light"]:before{animation:organization-color-flow 24s ease-in-out infinite alternate}}
+@media(prefers-color-scheme:light) and (prefers-reduced-motion:no-preference){.app-shell[data-theme="system"]:before{animation:organization-color-flow 24s ease-in-out infinite alternate}}
+
+/* The mobile drawer owns secondary navigation; its footer never overlays Branding. */
+@media(max-width:760px){
+  .mobile-app-bar{justify-content:flex-start}
+  .mobile-org-button{width:100%}
+  .mobile-org-button strong{max-width:none}
+  .mobile-overflow-button{display:none}
+  .sidebar{overflow:hidden}
+  .sidebar .org-identity{flex:0 0 auto}
+  .sidebar nav{min-height:0;flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding-bottom:8px;scrollbar-width:thin}
+  .sidebar .sidebar-bottom{position:static;flex:0 0 auto;margin-top:8px;padding-top:12px}
+  .sidebar .nav-item{min-height:44px}
 }
