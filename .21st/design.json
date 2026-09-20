@@ -160,6 +160,10 @@
     {
       "decision": "Use a restrained enterprise interface rather than decorative showcase UI",
       "reason": "The product handles official organizational communication and must prioritize clarity, trust, scope, and delivery status."
+    },
+    {
+      "decision": "Use an organization identity bar and thumb-zone tab navigation on phones",
+      "reason": "Mobile users can identify the active organization and reach their three most frequent role-specific destinations without opening the full administration drawer."
     }
   ],
   "evidence": [
