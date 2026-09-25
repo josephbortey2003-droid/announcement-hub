@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AudienceComposer, type AnnouncementDraft } from "@/components/announcement/audience-composer";
 import {
-  ArrowLeft, ArrowRight, Bell, Building2, Check, CircleAlert,
+  ArrowLeft, ArrowRight, Bell, Building2, Check, CircleAlert, Eye, EyeOff,
   GraduationCap, History, Inbox,
   KeyRound, LogOut, Menu, MessageSquareText, Palette, Plus,
   Monitor, Moon, Radio, Send, Settings, ShieldCheck, Sun,
@@ -34,9 +34,9 @@ const safeCell=(value:string)=>!/^[=+@-]/.test(value.trim());
 const readableText=(hex:string)=>{const value=hex.replace("#","");if(value.length!==6)return"#ffffff";const [r,g,b]=[0,2,4].map(i=>parseInt(value.slice(i,i+2),16)/255).map(channel=>channel<=.04045?channel/12.92:Math.pow((channel+.055)/1.055,2.4));return .2126*r+.7152*g+.0722*b>.36?"#071c2d":"#ffffff"};
 
 const roleInfo = {
-  creator:{icon:Building2,label:"Organization owner",title:"Create or manage a space",help:"Manage people, authority, branding and delivery settings."},
-  authority:{icon:ShieldCheck,label:"Authorized leader",title:"Publish within your scope",help:"Send announcements only to audiences assigned to you."},
-  member:{icon:GraduationCap,label:"Member, staff or student",title:"Open your organization inbox",help:"Read verified announcements from your organization."},
+  creator:{icon:Building2,label:"Organization owner",tabLabel:"Creator / Admin",title:"Create or manage a space",welcome:"Welcome back",signInLabel:"Sign in as owner",help:"Manage people, authority, branding and delivery settings."},
+  authority:{icon:ShieldCheck,label:"Authorized leader",tabLabel:"Authority",title:"Publish within your scope",welcome:"Welcome back",signInLabel:"Sign in as authority",help:"Send announcements only to audiences assigned to you."},
+  member:{icon:GraduationCap,label:"Member, staff or student",tabLabel:"Members",title:"Open your organization inbox",welcome:"Welcome back",signInLabel:"Open your inbox",help:"Read verified announcements from your organization."},
 };
 
 function Brand({compact=false,onClick}:{compact?:boolean;onClick?:()=>void}){
@@ -51,7 +51,7 @@ function ThemeSelect({theme,setTheme,label="Appearance"}:{theme:ThemeMode;setThe
 
 function Welcome({onEnter,theme,setTheme}:{onEnter:(p:Portal)=>void;theme:ThemeMode;setTheme:(theme:ThemeMode)=>void}){
   const [role,setRole]=useState<Portal>("creator"); const [method,setMethod]=useState<"password"|"code">("password");
-  const [identifier,setIdentifier]=useState(""); const [organizationCode,setOrganizationCode]=useState(""); const [password,setPassword]=useState(""); const [formError,setFormError]=useState("");
+  const [identifier,setIdentifier]=useState(""); const [organizationCode,setOrganizationCode]=useState(""); const [password,setPassword]=useState(""); const [formError,setFormError]=useState(""); const [showPassword,setShowPassword]=useState(false); const [rememberMe,setRememberMe]=useState(true);
   const current=roleInfo[role]; const Icon=current.icon;
   const unavailable=(name:string)=>setFormError(`${name} requires a configured identity service and is not active in this local prototype.`);
   const continueWithOrganization=()=>{if(role!=="creator"&&!organizationCode.trim()){setFormError("Enter the organization code supplied by your administrator.");return}if(!identifier.trim()){setFormError("Enter your approved email, phone number or member ID.");return}if(method==="password"&&!password.trim()){setFormError("Enter your password, or choose a one-time code.");return}unavailable(method==="password"?"Password sign-in":"One-time-code sign-in")};
@@ -59,15 +59,16 @@ function Welcome({onEnter,theme,setTheme}:{onEnter:(p:Portal)=>void;theme:ThemeM
     <nav className="welcome-nav"><Brand/><div className="welcome-controls"><span>Prototype access review</span><ThemeSelect theme={theme} setTheme={setTheme} label="Colour mode"/></div></nav>
     <section className="welcome-intro"><p className="eyebrow">Announcement Hub prototype</p><h1>Official messages for your organization.</h1><p>Choose a role to inspect its workflow. Production sign-in remains disabled until a verified identity service is connected.</p></section>
     <section className="entry-layout">
-      <div className="role-list" aria-label="Choose your role">{(Object.keys(roleInfo) as Portal[]).map(id=>{const r=roleInfo[id],I=r.icon;return <button key={id} className={`role-row ${role===id?"active":""}`} onClick={()=>setRole(id)}><span className="role-icon"><I size={20}/></span><span><small>{r.label}</small><strong>{r.title}</strong><em>{r.help}</em></span><ArrowRight size={18}/></button>})}</div>
+      <div className="role-list" aria-label="Choose your role">{(Object.keys(roleInfo) as Portal[]).map(id=>{const r=roleInfo[id],I=r.icon;return <button key={id} type="button" className={`role-row ${role===id?"active":""}`} aria-pressed={role===id} onClick={()=>{setRole(id);setFormError("")}}><span className="role-icon"><I size={20}/></span><span className="role-tab-label">{r.tabLabel}</span><span className="role-copy"><small>{r.label}</small><strong>{r.title}</strong><em>{r.help}</em></span><ArrowRight size={18}/></button>})}</div>
       <section className="access-panel" id="access-panel">
-        <div className="access-heading"><span className="access-icon"><Icon size={22}/></span><div><p>{current.label}</p><h2>Sign in</h2></div></div>
+        <div className="access-heading"><span className="access-icon"><Icon size={22}/></span><div><p>{current.label}</p><h2>{current.welcome}</h2><span className="access-subtitle">{role==="creator"?"Sign in to manage your organization’s space.":role==="authority"?"Sign in to publish within your assigned scope.":"Sign in to read verified organization updates."}</span></div></div>
         <button type="button" className="oauth-button" onClick={()=>unavailable("Google sign-in")}><span>G</span> Continue with Google</button><div className="divider"><span>or use organization access</span></div>
         {role!=="creator"&&<label><span>Organization code</span><input value={organizationCode} onChange={event=>setOrganizationCode(event.target.value)} aria-label="Organization code" autoComplete="organization"/></label>}
         <label><span>Email, phone number or member ID</span><input value={identifier} onChange={event=>setIdentifier(event.target.value)} aria-label="Email, phone number or member ID" autoComplete="username"/></label>
-        {method==="password"&&<label><span>Password</span><input value={password} onChange={event=>setPassword(event.target.value)} type="password" aria-label="Password" autoComplete="current-password"/></label>}
+        {method==="password"&&<label><span>Password</span><span className="password-field"><input value={password} onChange={event=>setPassword(event.target.value)} type={showPassword?"text":"password"} aria-label="Password" autoComplete="current-password"/><button type="button" aria-label={showPassword?"Hide password":"Show password"} onClick={()=>setShowPassword(value=>!value)}>{showPassword?<EyeOff size={18}/>:<Eye size={18}/>}</button></span></label>}
+        {method==="password"&&<div className="access-options"><label><input type="checkbox" checked={rememberMe} onChange={event=>setRememberMe(event.target.checked)}/><span>Remember me</span></label><button type="button" onClick={()=>unavailable("Password recovery")}>Forgot password?</button></div>}
         {formError&&<p className="inline-error" role="alert"><CircleAlert size={16}/>{formError}</p>}
-        <button className="primary-action" onClick={continueWithOrganization}>{method==="password"?"Sign in":"Send one-time code"}<ArrowRight size={17}/></button>
+        <button className="primary-action" onClick={continueWithOrganization}>{method==="password"?current.signInLabel:"Send one-time code"}<ArrowRight size={17}/></button>
         <button className="text-action" onClick={()=>setMethod(method==="password"?"code":"password")}><KeyRound size={15}/>{method==="password"?"Use a one-time code":"Use a password instead"}</button>
         <p className="access-note">Google access will work only after an identity provider verifies an approved organization member.</p>
         <div className="prototype-access"><p><strong>Prototype preview</strong> skips authentication and contains no real organization data.</p><button type="button" className="secondary" onClick={()=>onEnter(role)}>Preview {current.label.toLowerCase()} portal</button></div>
