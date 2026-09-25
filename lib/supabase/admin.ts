@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
+import type { Database } from "./database.types";
 import { requirePublicSupabaseConfig } from "./config";
 
 export function createAdminClient() {
@@ -12,7 +13,7 @@ export function createAdminClient() {
     throw new Error("The server-side Supabase secret key is not configured.");
   }
 
-  return createClient(url, secretKey, {
+  return createClient<Database>(url, secretKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }

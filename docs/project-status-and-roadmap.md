@@ -17,8 +17,9 @@ Last reviewed: 25 September 2026
 | Notebook-style role access UI | Verified locally | Responsive access page and mobile reference implementation. |
 | Light, dark and device themes | Verified locally | Shared theme control and system preference support. |
 | Responsive workspace | Verified locally | Checked at 320, 768, 1024 and 1440 px without page-level horizontal overflow. |
-| Unique organization codes | Implemented, configuration required | PostgreSQL unique constraint and format check; friendly `23505` handling. Requires migrations to be applied. |
-| Password, OTP and Google sign-in | Implemented, configuration required | Requires hosted Supabase, redirect allowlist, SMTP and provider configuration. |
+| Unique organization codes | Implemented, backend connected | PostgreSQL unique constraint and format check are applied; friendly `23505` handling is implemented. |
+| Password and email OTP sign-in | Implemented, backend connected | Hosted Supabase and exact callback URLs are configured; production SMTP and end-to-end account tests remain. |
+| Google sign-in | Implemented, configuration required | The application and PKCE callback are ready; Google client credentials have not been created or stored. |
 | Owner organization creation | Implemented, configuration required | Completes after verified authentication and migration deployment. |
 | Organization branding persistence | Implemented, configuration required | Security-invoker RPC, private storage and signed URLs. |
 | Branding propagation to members | Implemented, configuration required | Membership-scoped reads plus RLS-protected Realtime refresh. |
@@ -46,15 +47,17 @@ At the current revision:
 - Organization identity remains visible across mobile and desktop responsive layouts.
 - GitHub Actions validates pushes and deploys the preview.
 
-Database migrations and pgTAP tests still require Docker or a linked non-production Supabase project.
+Database migrations are applied to the linked hosted development project. The
+pgTAP suite still requires Docker or another supported runner. Supabase security
+and performance advisors report no current issues.
 
 ## Known limitations
 
-1. No hosted Supabase project is connected to the repository environment.
-2. Preview-created members, groups, authorities and announcements are held in React state and disappear on refresh.
-3. GitHub Pages cannot execute authentication callbacks or server API routes.
-4. The generated database types have not yet been refreshed from an applied local schema.
-5. Email invitations, SMTP delivery and CAPTCHA are not configured.
+1. Preview-created members, groups, authorities and announcements are held in React state and disappear on refresh.
+2. GitHub Pages cannot execute authentication callbacks or server API routes.
+3. Production SMTP delivery and CAPTCHA are not configured.
+4. Google OAuth is coded but its Google client credentials are not configured.
+5. The full-stack deployment does not yet have the server-only Supabase secret.
 6. Hubtel credentials and sender approval are not configured.
 7. SMS provider callbacks and background fallback scheduling are not running.
 8. Member read receipts are not connected to the interface.
@@ -65,16 +68,14 @@ Database migrations and pgTAP tests still require Docker or a linked non-product
 
 ### Milestone 1: verify the database
 
-- Install Docker Desktop or create a separate development Supabase project.
-- Apply all migrations from a clean database.
-- Run pgTAP tests and database advisors.
-- Generate and commit TypeScript database types.
-- Resolve every advisor warning before production data is added.
+- Install Docker Desktop or another supported pgTAP runner.
+- Run pgTAP tests against an isolated test database.
+- Keep both hosted database advisors clear as the schema evolves.
 
 ### Milestone 2: activate authentication
 
-- Configure hosted URL and publishable/secret keys.
-- Configure SMTP, email templates and exact redirect URLs.
+- Configure the server-only secret in the full-stack deployment.
+- Configure SMTP and email templates; exact redirect URLs are already allow-listed.
 - Configure Google OAuth.
 - Add CAPTCHA and owner-registration abuse controls.
 - Test owner creation, duplicate codes, password recovery and each role on two devices.

@@ -94,7 +94,20 @@ Added:
 - shared owner, authority and member brand loading;
 - responsive validation at 320, 768, 1024 and 1440 pixels.
 
-This work is implemented and locally build-verified but still requires the Supabase migrations to be executed against a real PostgreSQL instance.
+This work was initially implemented and locally build-verified before a hosted
+backend existed.
+
+### Hosted Supabase development backend
+
+Created and linked the `announcement-hub` Supabase project in `eu-west-2`,
+applied the complete migration history, configured exact production and local
+authentication callback URLs, and kept the public GitHub Pages build in honest
+prototype mode. The security advisor passed. A follow-up migration split broad
+owner `FOR ALL` RLS policies into mutation-specific policies, after which the
+performance advisor also passed. Email confirmation is enabled; Google OAuth,
+production SMTP, CAPTCHA, and the server-only deployment secret remain explicit
+configuration tasks. TypeScript database types were generated from the hosted
+schema and wired into every Supabase client factory.
 
 ## Design references and skills consulted
 

@@ -1,6 +1,10 @@
 # Announcement Hub backend setup
 
-This repository contains the first production-oriented backend foundation. It is not connected to a hosted Supabase project yet.
+This repository is linked to the hosted Supabase project `announcement-hub`
+(`drilgelrfxoluxklcdhp`) in `eu-west-2`. The committed migrations were applied
+on 25 September 2026. The public GitHub Pages build intentionally remains a
+prototype; the ignored local environment file connects local full-stack runs to
+the hosted development backend.
 
 ## What is included
 
@@ -25,7 +29,10 @@ This repository contains the first production-oriented backend foundation. It is
 - Docker Desktop for the local Supabase stack and database tests.
 - A hosted Supabase project when moving beyond local development.
 
-Docker is not installed on the current workstation, so the migration and pgTAP tests have not yet been executed against a PostgreSQL instance. Do not apply this migration to production before the local reset, test suite and database advisors pass.
+Docker is not installed on the current workstation, so the pgTAP suite has not
+been executed. The migrations have been executed on the linked hosted project.
+Both the Supabase security and performance advisors currently report no issues.
+The pgTAP gap must still be closed before calling the backend production-ready.
 
 ## Local setup
 
@@ -63,17 +70,33 @@ Docker is not installed on the current workstation, so the migration and pgTAP t
    npm run dev
    ```
 
-## Hosted project setup
+## Hosted project status
 
-1. Create a Supabase project in an appropriate region.
-2. Keep automatic Data API exposure disabled. The migration grants only the operations required by the app.
-3. Add the hosted URL and publishable key to the deployment environment. Never expose a secret or service-role key through a `NEXT_PUBLIC_` variable.
-4. Configure a production SMTP provider before invitations.
-5. Configure the application domain and exact OAuth redirect URLs.
-6. Enable Google only after its consent screen, domain and redirect URIs are verified.
-7. Add the exact production `/auth/callback` address to the Supabase redirect allow list. OAuth and verification redirects must never use an unrestricted external URL.
-8. Enable owner sign-up only after SMTP, abuse controls and CAPTCHA are configured. Member accounts should be created through organization invitations rather than public self-registration.
-9. Link the CLI, run a migration dry review, execute database tests, and run database advisors before pushing.
+Completed:
+
+- Hosted project created in `eu-west-2` and linked to the repository.
+- All five migrations applied, including the RLS policy optimization migration.
+- Automatic Data API exposure remains disabled; migrations grant explicit access.
+- Email/password signup is enabled with email confirmation required.
+- The site URL is `https://announcement-hub.josephbortey2003.chatgpt.site/`.
+- Exact production, `localhost` and `127.0.0.1` `/auth/callback` URLs are allow-listed.
+- The local ignored `.env.local` contains only the hosted URL and browser-safe publishable key. No secret key is committed.
+- Security and performance advisors report no issues.
+- TypeScript database types were generated from the applied hosted schema and
+  are used by the browser, server and privileged Supabase clients.
+
+Still required:
+
+1. Configure a production SMTP provider before invitations are sent to real users.
+2. Create a Google OAuth web client, register
+   `https://drilgelrfxoluxklcdhp.supabase.co/auth/v1/callback`, and store its
+   client ID and secret in Supabase.
+3. Create an hCaptcha or Cloudflare Turnstile site, add its frontend site key,
+   and store its secret in Supabase before exposing owner signup publicly.
+4. Add the server-only Supabase secret to a full-stack deployment's encrypted
+   environment settings. Never expose it through a `NEXT_PUBLIC_` variable.
+5. Run the pgTAP suite once Docker or an equivalent test runner is available.
+6. Keep member accounts invitation-only rather than enabling unrestricted member registration.
 
 ## Security decisions
 
