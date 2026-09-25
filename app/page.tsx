@@ -9,6 +9,9 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AudienceComposer, type AnnouncementDraft } from "@/components/announcement/audience-composer";
+import { getPublicSupabaseConfig } from "@/lib/supabase/config";
+import { normalizeOrganizationCode } from "@/lib/organizations/code";
+import type { OrganizationAccess } from "@/lib/supabase/browser-auth";
 import {
   ArrowLeft, ArrowRight, Bell, Building2, Check, CircleAlert, Eye, EyeOff,
   GraduationCap, History, Inbox,
@@ -49,29 +52,100 @@ function ThemeSelect({theme,setTheme,label="Appearance"}:{theme:ThemeMode;setThe
   return <div className="theme-select" role="group" aria-label={label}><span>{label}</span><div className="theme-options">{modes.map(([mode,name,Icon])=><button type="button" key={mode} className={theme===mode?"active":""} aria-pressed={theme===mode} title={`${name} mode`} onClick={()=>setTheme(mode)}><Icon size={15}/><span>{name}</span></button>)}</div></div>
 }
 
-function Welcome({onEnter,theme,setTheme}:{onEnter:(p:Portal)=>void;theme:ThemeMode;setTheme:(theme:ThemeMode)=>void}){
-  const [role,setRole]=useState<Portal>("creator"); const [method,setMethod]=useState<"password"|"code">("password");
-  const [identifier,setIdentifier]=useState(""); const [organizationCode,setOrganizationCode]=useState(""); const [password,setPassword]=useState(""); const [formError,setFormError]=useState(""); const [showPassword,setShowPassword]=useState(false); const [rememberMe,setRememberMe]=useState(true);
+function Welcome({onEnter,theme,setTheme}:{onEnter:(p:Portal,brand?:BrandData)=>void;theme:ThemeMode;setTheme:(theme:ThemeMode)=>void}){
+  const [role,setRole]=useState<Portal>("creator"); const [method,setMethod]=useState<"password"|"code">("password"); const [authMode,setAuthMode]=useState<"signin"|"signup">("signin");
+  const [identifier,setIdentifier]=useState(""); const [organizationCode,setOrganizationCode]=useState(""); const [password,setPassword]=useState(""); const [confirmPassword,setConfirmPassword]=useState(""); const [fullName,setFullName]=useState(""); const [organizationName,setOrganizationName]=useState(""); const [formError,setFormError]=useState(""); const [formNotice,setFormNotice]=useState(""); const [showPassword,setShowPassword]=useState(false); const [authBusy,setAuthBusy]=useState(false); const [recoveryMode,setRecoveryMode]=useState(false);
   const current=roleInfo[role]; const Icon=current.icon;
+  const backendReady=getPublicSupabaseConfig()!==null;
+  useEffect(()=>{const timer=window.setTimeout(()=>{const query=new URLSearchParams(window.location.search);setRecoveryMode(query.get("recovery")==="1");const authError=query.get("auth_error");if(authError)setFormError(authError==="missing_code"?"The sign-in link is incomplete. Request a new secure link.":"The sign-in link could not be verified. Request a new link and try again.")},0);return()=>window.clearTimeout(timer)},[]);
   const unavailable=(name:string)=>setFormError(`${name} requires a configured identity service and is not active in this local prototype.`);
-  const continueWithOrganization=()=>{if(role!=="creator"&&!organizationCode.trim()){setFormError("Enter the organization code supplied by your administrator.");return}if(!identifier.trim()){setFormError("Enter your approved email, phone number or member ID.");return}if(method==="password"&&!password.trim()){setFormError("Enter your password, or choose a one-time code.");return}unavailable(method==="password"?"Password sign-in":"One-time-code sign-in")};
+  const enterAccess=(access:OrganizationAccess)=>onEnter(access.portal,{name:access.name,code:access.code,color:access.primaryColor,secondaryColor:access.secondaryColor,logo:access.logo});
+  const validateOwnerSetup=()=>{if(fullName.trim().length<2){setFormError("Enter your full name.");return false}if(organizationName.trim().length<2){setFormError("Enter your organization name.");return false}if(normalizeOrganizationCode(organizationCode).length<4){setFormError("Use an organization code with at least four letters or numbers.");return false}return true};
+  const continueWithOrganization=async()=>{
+    setFormError("");setFormNotice("");
+    if(!backendReady)return unavailable(authMode==="signup"?"Account creation":method==="password"?"Password sign-in":"One-time-code sign-in");
+    if(recoveryMode){
+      if(password.length<15){setFormError("Use a new password with at least 15 characters.");return}
+      if(password!==confirmPassword){setFormError("The two passwords do not match.");return}
+      setAuthBusy(true);
+      try{const {getBrowserClient}=await import("@/lib/supabase/browser-auth");const {error}=await getBrowserClient().auth.updateUser({password});if(error)throw error;setFormNotice("Your password has been updated. You can continue to your organization space.");setRecoveryMode(false);window.history.replaceState(null,"",window.location.pathname)}catch(error){setFormError(error instanceof Error?error.message:"The password could not be updated.")}finally{setAuthBusy(false)}
+      return;
+    }
+    if(authMode==="signup"&&!validateOwnerSetup())return;
+    if(authMode==="signup"&&!identifier.includes("@")){setFormError("Use a valid email address to create the owner account.");return}
+    if(authMode==="signin"&&role!=="creator"&&!organizationCode.trim()){setFormError("Enter the organization code supplied by your administrator.");return}
+    if(!identifier.trim()){setFormError("Enter your approved email address or phone number.");return}
+    if(method==="password"&&password.length<(authMode==="signup"?15:1)){setFormError(authMode==="signup"?"Create a password with at least 15 characters.":"Enter your password, or choose a one-time code.");return}
+    setAuthBusy(true);
+    try{
+      const {completePendingOrganization,getBrowserClient,loadOrganizationAccess,savePendingOrganization,saveRequestedOrganizationCode}=await import("@/lib/supabase/browser-auth");
+      const client=getBrowserClient();
+      if(authMode==="signup"){
+        savePendingOrganization({fullName:fullName.trim(),name:organizationName.trim(),code:organizationCode});
+        const {data,error}=await client.auth.signUp({email:identifier.trim(),password,options:{data:{full_name:fullName.trim()},emailRedirectTo:`${window.location.origin}/auth/callback`}});
+        if(error)throw error;
+        if(data.session&&data.user){const access=await completePendingOrganization(data.user,client);if(access)return enterAccess(access)}
+        setFormNotice("Check your email to verify the owner account. Your organization space will be created after verification.");
+        return;
+      }
+      if(method==="code"){
+        const value=identifier.trim();
+        if(role!=="creator")saveRequestedOrganizationCode(organizationCode);
+        const credentials=value.startsWith("+")?{phone:value,options:{shouldCreateUser:false}}:{email:value,options:{shouldCreateUser:false,emailRedirectTo:`${window.location.origin}/auth/callback`}};
+        const {error}=await client.auth.signInWithOtp(credentials);
+        if(error)throw error;
+        setFormNotice(value.startsWith("+")?"A sign-in code was requested for that phone number.":"Check your email for the secure sign-in link.");
+        return;
+      }
+      const value=identifier.trim();
+      const {error}=await client.auth.signInWithPassword(value.startsWith("+")?{phone:value,password}:{email:value,password});
+      if(error)throw error;
+      const access=await loadOrganizationAccess(client,role==="creator"?undefined:organizationCode);
+      if(!access){await client.auth.signOut();throw new Error("No active membership was found for that organization.")}
+      enterAccess(access);
+    }catch(error){setFormError(error instanceof Error?error.message:"Authentication could not be completed.")}finally{setAuthBusy(false)}
+  };
+  const continueWithGoogle=async()=>{
+    setFormError("");setFormNotice("");
+    if(!backendReady)return unavailable("Google sign-in");
+    if(authMode==="signup"&&!validateOwnerSetup())return;
+    const {getBrowserClient,savePendingOrganization,saveRequestedOrganizationCode}=await import("@/lib/supabase/browser-auth");
+    if(authMode==="signup")savePendingOrganization({fullName:fullName.trim(),name:organizationName.trim(),code:organizationCode});
+    else if(role!=="creator")saveRequestedOrganizationCode(organizationCode);
+    setAuthBusy(true);
+    const {error}=await getBrowserClient().auth.signInWithOAuth({provider:"google",options:{redirectTo:`${window.location.origin}/auth/callback`}});
+    if(error){setFormError(error.message);setAuthBusy(false)}
+  };
+  const recoverPassword=async()=>{
+    setFormError("");setFormNotice("");
+    if(!backendReady)return unavailable("Password recovery");
+    if(!identifier.includes("@")){setFormError("Enter your email address before requesting a password reset.");return}
+    const {getBrowserClient}=await import("@/lib/supabase/browser-auth");
+    setAuthBusy(true);const {error}=await getBrowserClient().auth.resetPasswordForEmail(identifier.trim(),{redirectTo:`${window.location.origin}/auth/callback?next=/?recovery=1`});setAuthBusy(false);
+    if(error)setFormError(error.message);else setFormNotice("Check your email for the password reset link.");
+  };
   return <main className="welcome-shell" data-theme={theme}><a className="skip-link" href="#access-panel">Skip to sign in</a>
     <nav className="welcome-nav"><Brand/><div className="welcome-controls"><span>Prototype access review</span><ThemeSelect theme={theme} setTheme={setTheme} label="Colour mode"/></div></nav>
     <section className="welcome-intro"><p className="eyebrow">Announcement Hub prototype</p><h1>Official messages for your organization.</h1><p>Choose a role to inspect its workflow. Production sign-in remains disabled until a verified identity service is connected.</p></section>
     <section className="entry-layout">
-      <div className="role-list" aria-label="Choose your role">{(Object.keys(roleInfo) as Portal[]).map(id=>{const r=roleInfo[id],I=r.icon;return <button key={id} type="button" className={`role-row ${role===id?"active":""}`} aria-pressed={role===id} onClick={()=>{setRole(id);setFormError("")}}><span className="role-icon"><I size={20}/></span><span className="role-tab-label">{r.tabLabel}</span><span className="role-copy"><small>{r.label}</small><strong>{r.title}</strong><em>{r.help}</em></span><ArrowRight size={18}/></button>})}</div>
+      <div className="role-list" aria-label="Choose your role">{(Object.keys(roleInfo) as Portal[]).map(id=>{const r=roleInfo[id],I=r.icon;return <button key={id} type="button" className={`role-row ${role===id?"active":""}`} aria-pressed={role===id} onClick={()=>{setRole(id);if(id!=="creator")setAuthMode("signin");setFormError("");setFormNotice("")}}><span className="role-icon"><I size={20}/></span><span className="role-tab-label">{r.tabLabel}</span><span className="role-copy"><small>{r.label}</small><strong>{r.title}</strong><em>{r.help}</em></span><ArrowRight size={18}/></button>})}</div>
       <section className="access-panel" id="access-panel">
-        <div className="access-heading"><span className="access-icon"><Icon size={22}/></span><div><p>{current.label}</p><h2>{current.welcome}</h2><span className="access-subtitle">{role==="creator"?"Sign in to manage your organization’s space.":role==="authority"?"Sign in to publish within your assigned scope.":"Sign in to read verified organization updates."}</span></div></div>
-        <button type="button" className="oauth-button" onClick={()=>unavailable("Google sign-in")}><span>G</span> Continue with Google</button><div className="divider"><span>or use organization access</span></div>
-        {role!=="creator"&&<label><span>Organization code</span><input value={organizationCode} onChange={event=>setOrganizationCode(event.target.value)} aria-label="Organization code" autoComplete="organization"/></label>}
-        <label><span>Email, phone number or member ID</span><input value={identifier} onChange={event=>setIdentifier(event.target.value)} aria-label="Email, phone number or member ID" autoComplete="username"/></label>
-        {method==="password"&&<label><span>Password</span><span className="password-field"><input value={password} onChange={event=>setPassword(event.target.value)} type={showPassword?"text":"password"} aria-label="Password" autoComplete="current-password"/><button type="button" aria-label={showPassword?"Hide password":"Show password"} onClick={()=>setShowPassword(value=>!value)}>{showPassword?<EyeOff size={18}/>:<Eye size={18}/>}</button></span></label>}
-        {method==="password"&&<div className="access-options"><label><input type="checkbox" checked={rememberMe} onChange={event=>setRememberMe(event.target.checked)}/><span>Remember me</span></label><button type="button" onClick={()=>unavailable("Password recovery")}>Forgot password?</button></div>}
+        {role==="creator"&&!recoveryMode&&<div className="auth-mode-tabs" role="group" aria-label="Owner access"><button type="button" className={authMode==="signin"?"active":""} aria-pressed={authMode==="signin"} onClick={()=>{setAuthMode("signin");setFormError("");setFormNotice("")}}>Sign in</button><button type="button" className={authMode==="signup"?"active":""} aria-pressed={authMode==="signup"} onClick={()=>{setAuthMode("signup");setMethod("password");setFormError("");setFormNotice("")}}>Create a space</button></div>}
+        <div className="access-heading"><span className="access-icon"><Icon size={22}/></span><div><p>{recoveryMode?"Account recovery":current.label}</p><h2>{recoveryMode?"Set a new password":authMode==="signup"?"Create your space":current.welcome}</h2><span className="access-subtitle">{recoveryMode?"Choose a new password for your verified account.":authMode==="signup"?"Verify the owner account, then configure your organization.":role==="creator"?"Sign in to manage your organization’s space.":role==="authority"?"Sign in to publish within your assigned scope.":"Sign in to read verified organization updates."}</span></div></div>
+        {!recoveryMode&&<><button type="button" className="oauth-button" disabled={authBusy} onClick={continueWithGoogle}><span>G</span> Continue with Google</button><div className="divider"><span>or use organization access</span></div></>}
+        {!recoveryMode&&authMode==="signup"&&<><label><span>Full name</span><input value={fullName} onChange={event=>setFullName(event.target.value)} aria-label="Full name" autoComplete="name"/></label><label><span>Organization name</span><input value={organizationName} onChange={event=>setOrganizationName(event.target.value)} aria-label="Organization name" autoComplete="organization"/></label></>}
+        {!recoveryMode&&(role!=="creator"||authMode==="signup")&&<label><span>Organization code</span><input value={organizationCode} onChange={event=>setOrganizationCode(normalizeOrganizationCode(event.target.value))} aria-label="Organization code" autoComplete="off"/></label>}
+        {!recoveryMode&&<label><span>{authMode==="signup"?"Owner email address":"Email address or phone number"}</span><input value={identifier} onChange={event=>setIdentifier(event.target.value)} aria-label={authMode==="signup"?"Owner email address":"Email address or phone number"} autoComplete="username" inputMode={authMode==="signup"?"email":"text"}/></label>}
+        {method==="password"&&<label><span>{recoveryMode?"New password":"Password"}</span><span className="password-field"><input value={password} onChange={event=>setPassword(event.target.value)} type={showPassword?"text":"password"} aria-label={recoveryMode?"New password":"Password"} autoComplete={authMode==="signup"||recoveryMode?"new-password":"current-password"}/><button type="button" aria-label={showPassword?"Hide password":"Show password"} onClick={()=>setShowPassword(value=>!value)}>{showPassword?<EyeOff size={18}/>:<Eye size={18}/>}</button></span></label>}
+        {recoveryMode&&<label><span>Confirm new password</span><input value={confirmPassword} onChange={event=>setConfirmPassword(event.target.value)} type={showPassword?"text":"password"} aria-label="Confirm new password" autoComplete="new-password"/></label>}
+        {(authMode==="signup"||recoveryMode)&&<p className="field-help">Use at least 15 characters. Announcement Hub never creates passwords from names, phone numbers or organization codes.</p>}
+        {!recoveryMode&&authMode==="signin"&&method==="password"&&<div className="access-options single"><button type="button" onClick={recoverPassword}>Forgot password?</button></div>}
         {formError&&<p className="inline-error" role="alert"><CircleAlert size={16}/>{formError}</p>}
-        <button className="primary-action" onClick={continueWithOrganization}>{method==="password"?current.signInLabel:"Send one-time code"}<ArrowRight size={17}/></button>
-        <button className="text-action" onClick={()=>setMethod(method==="password"?"code":"password")}><KeyRound size={15}/>{method==="password"?"Use a one-time code":"Use a password instead"}</button>
-        <p className="access-note">Google access will work only after an identity provider verifies an approved organization member.</p>
-        <div className="prototype-access"><p><strong>Prototype preview</strong> skips authentication and contains no real organization data.</p><button type="button" className="secondary" onClick={()=>onEnter(role)}>Preview {current.label.toLowerCase()} portal</button></div>
+        {formNotice&&<p className="inline-success" role="status"><Check size={16}/>{formNotice}</p>}
+        <button className="primary-action" disabled={authBusy} onClick={continueWithOrganization}>{authBusy?"Please wait…":recoveryMode?"Update password":authMode==="signup"?"Create owner account":method==="password"?current.signInLabel:"Send one-time code"}{!authBusy&&<ArrowRight size={17}/>}</button>
+        {!recoveryMode&&authMode==="signin"&&<button className="text-action" onClick={()=>{setMethod(method==="password"?"code":"password");setFormError("");setFormNotice("")}}><KeyRound size={15}/>{method==="password"?"Use a one-time code":"Use a password instead"}</button>}
+        {!recoveryMode&&<p className="access-note">{authMode==="signup"?"Google account creation still requires a verified identity and a unique organization code.":"Google access works only when the verified account has an active organization membership."}</p>}
+        <div className="prototype-access"><p><strong>{backendReady?"Secure access available":"Prototype preview"}</strong> {backendReady?"uses the configured Supabase project. Preview mode remains separate and contains no real organization data.":"skips authentication and contains no real organization data."}</p><button type="button" className="secondary" onClick={()=>onEnter(role)}>Preview {current.label.toLowerCase()} portal</button></div>
       </section>
     </section>
     <footer className="site-footer"><span>© {new Date().getFullYear()} Announcement Hub</span><nav><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></nav></footer>
@@ -159,4 +233,4 @@ function Workspace({portal,onExit,brand,setBrand,people,setPeople,groups,setGrou
   const authorityGroups=groups.filter(group=>group.name===authorities[0]?.scope);
   return <main className="app-shell" data-theme={theme} style={brandStyle}><a className="skip-link" href="#workspace-content">Skip to content</a><MobileWorkspaceChrome portal={portal} view={view} setView={setView} onMenu={()=>setMobileOpen(true)} brand={brand}/><Sidebar portal={portal} view={view} setView={setView} onExit={onExit} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} brand={brand} theme={theme} setTheme={setTheme}/>{mobileOpen&&<button type="button" className="menu-backdrop" onClick={()=>setMobileOpen(false)} aria-label="Close navigation"/>}<section className="content-shell" id="workspace-content">{portal==="creator"?<CreatorDashboard view={creatorView} setView={setCreatorView} setModal={setModal} toast={s=>notify("error",s)} people={people} groups={groups} authorities={authorities} brand={brand} announcements={announcements} onPublish={publish}/>:portal==="authority"?<AuthorityDashboard view={authorityView} setView={setAuthorityView} notify={message=>notify("success",message)} groups={authorityGroups} people={people} announcements={announcements} onPublish={publish}/>:<MemberDashboard view={memberView} theme={theme} setTheme={setTheme} announcements={announcements}/>}<footer className="workspace-footer"><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><button type="button" onClick={onExit}><LogOut size={15}/> Sign out of preview</button></footer></section>{modal&&<ActionModal type={modal} close={()=>setModal(null)} commit={commit} people={people} groups={groups} brand={brand} error={s=>notify("error",s)}/>} {notice&&<div className={`toast ${notice.type}`} role={notice.type==="error"?"alert":"status"}>{notice.type==="success"?<Check size={18}/>:<CircleAlert size={18}/>}<span>{notice.text}</span><button type="button" onClick={()=>setNotice(null)} aria-label="Dismiss"><X size={15}/></button></div>}</main>}
 
-export default function Home(){const [portal,setPortal]=useState<Portal|null>(null),[brand,setBrand]=useState<BrandData>(demoBrand),[theme,setThemeState]=useState<ThemeMode>("system"),[people,setPeople]=useState<Person[]>([]),[groups,setGroups]=useState<Group[]>([]),[authorities,setAuthorities]=useState<Authority[]>([]),[announcements,setAnnouncements]=useState<PublishedAnnouncement[]>([]);useEffect(()=>{const saved=window.localStorage.getItem("announcement-hub-theme");if(saved!=="light"&&saved!=="dark")return;const timer=window.setTimeout(()=>setThemeState(saved),0);return()=>window.clearTimeout(timer)},[]);const setTheme=(value:ThemeMode)=>{setThemeState(value);window.localStorage.setItem("announcement-hub-theme",value)};const moveToPortal=(next:Portal|null)=>{setPortal(next);window.requestAnimationFrame(()=>window.scrollTo({top:0,behavior:"auto"}))};return portal?<Workspace portal={portal} onExit={()=>moveToPortal(null)} brand={brand} setBrand={setBrand} people={people} setPeople={setPeople} groups={groups} setGroups={setGroups} authorities={authorities} setAuthorities={setAuthorities} announcements={announcements} setAnnouncements={setAnnouncements} theme={theme} setTheme={setTheme}/>:<Welcome onEnter={moveToPortal} theme={theme} setTheme={setTheme}/>}
+export default function Home(){const [portal,setPortal]=useState<Portal|null>(null),[brand,setBrand]=useState<BrandData>(demoBrand),[theme,setThemeState]=useState<ThemeMode>("system"),[people,setPeople]=useState<Person[]>([]),[groups,setGroups]=useState<Group[]>([]),[authorities,setAuthorities]=useState<Authority[]>([]),[announcements,setAnnouncements]=useState<PublishedAnnouncement[]>([]);useEffect(()=>{const saved=window.localStorage.getItem("announcement-hub-theme");if(saved==="light"||saved==="dark"){const timer=window.setTimeout(()=>setThemeState(saved),0);return()=>window.clearTimeout(timer)}},[]);useEffect(()=>{if(getPublicSupabaseConfig()===null)return;let active=true;const restore=async()=>{try{const {completePendingOrganization,getBrowserClient,loadOrganizationAccess,takeRequestedOrganizationCode}=await import("@/lib/supabase/browser-auth");const client=getBrowserClient();const {data}=await client.auth.getUser();if(!data.user||!active)return;const created=await completePendingOrganization(data.user,client);const access=created??await loadOrganizationAccess(client,takeRequestedOrganizationCode());if(!access||!active)return;setBrand({name:access.name,code:access.code,color:access.primaryColor,secondaryColor:access.secondaryColor,logo:access.logo});setPortal(access.portal)}catch(error){console.error("Authenticated workspace restore failed",error instanceof Error?error.message:"unknown error")}};void restore();return()=>{active=false}},[]);const setTheme=(value:ThemeMode)=>{setThemeState(value);window.localStorage.setItem("announcement-hub-theme",value)};const moveToPortal=(next:Portal|null,nextBrand?:BrandData)=>{if(nextBrand)setBrand(nextBrand);setPortal(next);window.requestAnimationFrame(()=>window.scrollTo({top:0,behavior:"auto"}))};const exitPortal=async()=>{if(getPublicSupabaseConfig()){const {getBrowserClient}=await import("@/lib/supabase/browser-auth");await getBrowserClient().auth.signOut()}moveToPortal(null)};return portal?<Workspace portal={portal} onExit={exitPortal} brand={brand} setBrand={setBrand} people={people} setPeople={setPeople} groups={groups} setGroups={setGroups} authorities={authorities} setAuthorities={setAuthorities} announcements={announcements} setAnnouncements={setAnnouncements} theme={theme} setTheme={setTheme}/>:<Welcome onEnter={moveToPortal} theme={theme} setTheme={setTheme}/>}

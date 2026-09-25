@@ -11,7 +11,9 @@ This repository contains the first production-oriented backend foundation. It is
 - Flexible announcement audiences covering the full organization, groups, specific members and member exclusions.
 - A protected publish endpoint that resolves and snapshots recipients only after rechecking the caller's tenant role and group authority.
 - A private organization-logo bucket with membership and owner policies.
-- Browser/server Supabase client factories and an OAuth callback route.
+- Browser/server Supabase client factories, session-refresh proxy and an OAuth callback route.
+- Password, email/phone OTP and Google OAuth entry points that remain disabled when public Supabase configuration is absent.
+- Verified owner onboarding that stores pending organization details locally, waits for email/OAuth verification, then creates the profile, organization, owner membership and default branding through RLS-protected writes.
 - pgTAP catalogue tests under `supabase/tests/`.
 - Local Auth defaults that disable public signup, require confirmed email, use a 15-character minimum password and limit logo files to 1 MiB.
 
@@ -52,7 +54,8 @@ Docker is not installed on the current workstation, so the migration and pgTAP t
    npm run supabase:types
    ```
 
-8. Run the web application:
+8. For local owner registration, enable `[auth].enable_signup` and `[auth.email].enable_signup` only in the development configuration. Keep email confirmation enabled and configure CAPTCHA before enabling open registration on a public deployment.
+9. Run the web application:
 
    ```powershell
    npm run dev
@@ -66,7 +69,9 @@ Docker is not installed on the current workstation, so the migration and pgTAP t
 4. Configure a production SMTP provider before invitations.
 5. Configure the application domain and exact OAuth redirect URLs.
 6. Enable Google only after its consent screen, domain and redirect URIs are verified.
-7. Link the CLI, run a migration dry review, execute database tests, and run database advisors before pushing.
+7. Add the exact production `/auth/callback` address to the Supabase redirect allow list. OAuth and verification redirects must never use an unrestricted external URL.
+8. Enable owner sign-up only after SMTP, abuse controls and CAPTCHA are configured. Member accounts should be created through organization invitations rather than public self-registration.
+9. Link the CLI, run a migration dry review, execute database tests, and run database advisors before pushing.
 
 ## Security decisions
 
@@ -81,4 +86,4 @@ Docker is not installed on the current workstation, so the migration and pgTAP t
 
 ## Next implementation slice
 
-After local PostgreSQL verification, connect the welcome screen to Supabase Auth, create the organization onboarding transaction, and replace the frontend preview arrays with authenticated database queries. Keep live SMS disabled until tenant, authority and audience policy tests pass.
+After local PostgreSQL verification, replace the workspace preview arrays with authenticated database queries, starting with organizations, memberships and branding. Then connect member invitations and CSV imports. Keep live SMS disabled until tenant, authority and audience policy tests pass.

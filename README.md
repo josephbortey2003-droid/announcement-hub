@@ -23,6 +23,7 @@ The interface currently demonstrates:
 - honest empty, error and success states;
 - responsive desktop and mobile layouts;
 - a PostgreSQL/Supabase multi-tenant schema and row-level security tests;
+- Supabase password, OTP and Google OAuth wiring with verified owner-space onboarding, activated only when deployment credentials are present;
 - a disabled-by-default, server-side Hubtel SMS adapter with delivery status and cost recording.
 
 Authentication, persistent production data, WhatsApp delivery and live billing are not presented as active features. Real SMS delivery remains disabled until Hubtel and Supabase credentials, sender approval, test recipients and organization limits are configured.

@@ -407,18 +407,27 @@ img,svg,video,canvas{max-width:100%}
 
 /* Reference-led access page: notebook bookmarks feeding one focused sign-in card. */
 .role-tab-label{display:none}
+.auth-mode-tabs{margin:0 0 22px;padding:4px;display:grid;grid-template-columns:1fr 1fr;gap:4px;border:1px solid var(--line);border-radius:9px;background:color-mix(in srgb,var(--surface) 72%,var(--emerald-100))}
+.auth-mode-tabs button{min-height:40px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer}
+.auth-mode-tabs button.active{background:var(--surface);color:var(--emerald-900);box-shadow:0 2px 8px #12392b12}
 .access-subtitle{display:block;margin-top:5px;color:var(--muted);font-size:14px;line-height:20px}
+.field-help{margin:8px 0 0;color:var(--muted);font-size:11px;line-height:17px}
+.inline-success{margin:12px 0 0;padding:10px 12px;display:flex;align-items:flex-start;gap:8px;border-left:3px solid var(--emerald-700);border-radius:5px;background:var(--emerald-50);color:var(--emerald-900);font-size:13px;line-height:19px}
+.inline-success svg{flex:0 0 auto;margin-top:1px}
 .password-field{position:relative;display:block!important;margin:0!important}
 .password-field input{padding-right:48px}
 .password-field button{position:absolute;right:4px;top:4px;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:var(--muted);cursor:pointer}
 .password-field button:hover{background:var(--emerald-50);color:var(--emerald-800)}
 .access-options{margin:12px 0 2px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.access-options.single{justify-content:flex-end}
 .access-options label{display:flex;align-items:center;gap:9px;color:var(--ink);font-size:13px;cursor:pointer}
 .access-options label input{width:18px;height:18px;min-height:18px;margin:0;accent-color:var(--emerald-800)}
 .access-options label span{display:inline;margin:0;font-size:13px;font-weight:400}
 .access-options>button{min-height:40px;padding:0;border:0;background:transparent;color:var(--emerald-800);font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .welcome-shell[data-theme="dark"] .password-field button,.welcome-shell[data-theme="dark"] .access-options>button{color:var(--emerald-300)}
+.welcome-shell[data-theme="dark"] .auth-mode-tabs{background:#101713}.welcome-shell[data-theme="dark"] .auth-mode-tabs button.active{background:#26332c;color:var(--emerald-300)}.welcome-shell[data-theme="dark"] .inline-success{background:#17392d;color:#b9f6dc}
 @media(prefers-color-scheme:dark){.welcome-shell[data-theme="system"] .password-field button,.welcome-shell[data-theme="system"] .access-options>button{color:var(--emerald-300)}}
+@media(prefers-color-scheme:dark){.welcome-shell[data-theme="system"] .auth-mode-tabs{background:#101713}.welcome-shell[data-theme="system"] .auth-mode-tabs button.active{background:#26332c;color:var(--emerald-300)}.welcome-shell[data-theme="system"] .inline-success{background:#17392d;color:#b9f6dc}}
 
 @media(max-width:760px){
   .welcome-shell{min-height:100dvh;padding:0 16px 20px;background:radial-gradient(circle at 18% 12%,#d1fae56b 0,transparent 27%),linear-gradient(160deg,#fbfdfc 0%,#f1f7f4 100%)}
