@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/database.types";
 
 export const runtime = "nodejs";
 
@@ -41,13 +42,29 @@ async function loadActiveMemberships(admin: ReturnType<typeof createAdminClient>
   }
 }
 
-async function insertBatches(
+type BatchTable =
+  | "announcement_audiences"
+  | "announcement_individual_audiences"
+  | "announcement_exclusions"
+  | "recipient_deliveries";
+
+type BatchRow<T extends BatchTable> = Database["public"]["Tables"][T]["Insert"];
+
+async function insertBatches<T extends BatchTable>(
   admin: ReturnType<typeof createAdminClient>,
-  table: string,
-  rows: Record<string, unknown>[]
+  table: T,
+  rows: BatchRow<T>[]
 ) {
   for (let index = 0; index < rows.length; index += 500) {
-    const { error } = await admin.from(table).insert(rows.slice(index, index + 500));
+    const batch = rows.slice(index, index + 500);
+    const result = table === "announcement_audiences"
+      ? await admin.from("announcement_audiences").insert(batch as BatchRow<"announcement_audiences">[])
+      : table === "announcement_individual_audiences"
+        ? await admin.from("announcement_individual_audiences").insert(batch as BatchRow<"announcement_individual_audiences">[])
+        : table === "announcement_exclusions"
+          ? await admin.from("announcement_exclusions").insert(batch as BatchRow<"announcement_exclusions">[])
+          : await admin.from("recipient_deliveries").insert(batch as BatchRow<"recipient_deliveries">[]);
+    const { error } = result;
     if (error) throw new Error(`The ${table} records could not be created.`);
   }
 }

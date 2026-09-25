@@ -412,6 +412,7 @@ img,svg,video,canvas{max-width:100%}
 .auth-mode-tabs button.active{background:var(--surface);color:var(--emerald-900);box-shadow:0 2px 8px #12392b12}
 .access-subtitle{display:block;margin-top:5px;color:var(--muted);font-size:14px;line-height:20px}
 .field-help{margin:8px 0 0;color:var(--muted);font-size:11px;line-height:17px}
+.captcha-field{width:100%;min-height:65px;margin-top:14px;overflow:hidden}.captcha-field>div{max-width:100%}
 .inline-success{margin:12px 0 0;padding:10px 12px;display:flex;align-items:flex-start;gap:8px;border-left:3px solid var(--emerald-700);border-radius:5px;background:var(--emerald-50);color:var(--emerald-900);font-size:13px;line-height:19px}
 .inline-success svg{flex:0 0 auto;margin-top:1px}
 .password-field{position:relative;display:block!important;margin:0!important}

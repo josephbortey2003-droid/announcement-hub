@@ -107,7 +107,9 @@ owner `FOR ALL` RLS policies into mutation-specific policies, after which the
 performance advisor also passed. Email confirmation is enabled; Google OAuth,
 production SMTP, CAPTCHA, and the server-only deployment secret remain explicit
 configuration tasks. TypeScript database types were generated from the hosted
-schema and wired into every Supabase client factory.
+schema and wired into every Supabase client factory. Optional Cloudflare
+Turnstile support now forwards CAPTCHA tokens through signup, password, OTP and
+password-recovery requests without exposing the provider secret in the client.
 
 ## Design references and skills consulted
 

@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
+import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -56,8 +57,12 @@ function ThemeSelect({theme,setTheme,label="Appearance"}:{theme:ThemeMode;setThe
 function Welcome({onEnter,theme,setTheme}:{onEnter:(p:Portal,brand?:BrandData)=>void;theme:ThemeMode;setTheme:(theme:ThemeMode)=>void}){
   const [role,setRole]=useState<Portal>("creator"); const [method,setMethod]=useState<"password"|"code">("password"); const [authMode,setAuthMode]=useState<"signin"|"signup">("signin");
   const [identifier,setIdentifier]=useState(""); const [organizationCode,setOrganizationCode]=useState(""); const [password,setPassword]=useState(""); const [confirmPassword,setConfirmPassword]=useState(""); const [fullName,setFullName]=useState(""); const [organizationName,setOrganizationName]=useState(""); const [formError,setFormError]=useState(""); const [formNotice,setFormNotice]=useState(""); const [showPassword,setShowPassword]=useState(false); const [authBusy,setAuthBusy]=useState(false); const [recoveryMode,setRecoveryMode]=useState(false);
+  const [captchaToken,setCaptchaToken]=useState(""); const captchaRef=useRef<TurnstileInstance>(undefined);
   const current=roleInfo[role]; const Icon=current.icon;
   const backendReady=getPublicSupabaseConfig()!==null;
+  const turnstileSiteKey=process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const resetCaptcha=()=>{setCaptchaToken("");captchaRef.current?.reset()};
+  const requireCaptcha=()=>{if(turnstileSiteKey&&!captchaToken){setFormError("Complete the security check before continuing.");return false}return true};
   useEffect(()=>{const timer=window.setTimeout(()=>{const query=new URLSearchParams(window.location.search);setRecoveryMode(query.get("recovery")==="1");const authError=query.get("auth_error");if(authError)setFormError(authError==="missing_code"?"The sign-in link is incomplete. Request a new secure link.":"The sign-in link could not be verified. Request a new link and try again.")},0);return()=>window.clearTimeout(timer)},[]);
   const unavailable=(name:string)=>setFormError(`${name} requires a configured identity service and is not active in this local prototype.`);
   const enterAccess=(access:OrganizationAccess)=>onEnter(access.portal,brandFromAccess(access));
@@ -73,6 +78,7 @@ function Welcome({onEnter,theme,setTheme}:{onEnter:(p:Portal,brand?:BrandData)=>
       return;
     }
     if(authMode==="signup"&&!validateOwnerSetup())return;
+    if(!requireCaptcha())return;
     if(authMode==="signup"&&!identifier.includes("@")){setFormError("Use a valid email address to create the owner account.");return}
     if(authMode==="signin"&&role!=="creator"&&!organizationCode.trim()){setFormError("Enter the organization code supplied by your administrator.");return}
     if(!identifier.trim()){setFormError("Enter your approved email address or phone number.");return}
@@ -83,7 +89,7 @@ function Welcome({onEnter,theme,setTheme}:{onEnter:(p:Portal,brand?:BrandData)=>
       const client=getBrowserClient();
       if(authMode==="signup"){
         savePendingOrganization({fullName:fullName.trim(),name:organizationName.trim(),code:organizationCode});
-        const {data,error}=await client.auth.signUp({email:identifier.trim(),password,options:{data:{full_name:fullName.trim()},emailRedirectTo:`${window.location.origin}/auth/callback`}});
+        const {data,error}=await client.auth.signUp({email:identifier.trim(),password,options:{data:{full_name:fullName.trim()},emailRedirectTo:`${window.location.origin}/auth/callback`,captchaToken:captchaToken||undefined}});
         if(error)throw error;
         if(data.session&&data.user){const access=await completePendingOrganization(data.user,client);if(access)return enterAccess(access)}
         setFormNotice("Check your email to verify the owner account. Your organization space will be created after verification.");
@@ -92,19 +98,20 @@ function Welcome({onEnter,theme,setTheme}:{onEnter:(p:Portal,brand?:BrandData)=>
       if(method==="code"){
         const value=identifier.trim();
         if(role!=="creator")saveRequestedOrganizationCode(organizationCode);
-        const credentials=value.startsWith("+")?{phone:value,options:{shouldCreateUser:false}}:{email:value,options:{shouldCreateUser:false,emailRedirectTo:`${window.location.origin}/auth/callback`}};
+        const credentials=value.startsWith("+")?{phone:value,options:{shouldCreateUser:false,captchaToken:captchaToken||undefined}}:{email:value,options:{shouldCreateUser:false,emailRedirectTo:`${window.location.origin}/auth/callback`,captchaToken:captchaToken||undefined}};
         const {error}=await client.auth.signInWithOtp(credentials);
         if(error)throw error;
         setFormNotice(value.startsWith("+")?"A sign-in code was requested for that phone number.":"Check your email for the secure sign-in link.");
         return;
       }
       const value=identifier.trim();
-      const {error}=await client.auth.signInWithPassword(value.startsWith("+")?{phone:value,password}:{email:value,password});
+      const options={captchaToken:captchaToken||undefined};
+      const {error}=await client.auth.signInWithPassword(value.startsWith("+")?{phone:value,password,options}:{email:value,password,options});
       if(error)throw error;
       const access=await loadOrganizationAccess(client,role==="creator"?undefined:organizationCode);
       if(!access){await client.auth.signOut();throw new Error("No active membership was found for that organization.")}
       enterAccess(access);
-    }catch(error){setFormError(error instanceof Error?error.message:"Authentication could not be completed.")}finally{setAuthBusy(false)}
+    }catch(error){setFormError(error instanceof Error?error.message:"Authentication could not be completed.")}finally{setAuthBusy(false);resetCaptcha()}
   };
   const continueWithGoogle=async()=>{
     setFormError("");setFormNotice("");
@@ -121,8 +128,9 @@ function Welcome({onEnter,theme,setTheme}:{onEnter:(p:Portal,brand?:BrandData)=>
     setFormError("");setFormNotice("");
     if(!backendReady)return unavailable("Password recovery");
     if(!identifier.includes("@")){setFormError("Enter your email address before requesting a password reset.");return}
+    if(!requireCaptcha())return;
     const {getBrowserClient}=await import("@/lib/supabase/browser-auth");
-    setAuthBusy(true);const {error}=await getBrowserClient().auth.resetPasswordForEmail(identifier.trim(),{redirectTo:`${window.location.origin}/auth/callback?next=/?recovery=1`});setAuthBusy(false);
+    setAuthBusy(true);const {error}=await getBrowserClient().auth.resetPasswordForEmail(identifier.trim(),{redirectTo:`${window.location.origin}/auth/callback?next=/?recovery=1`,captchaToken:captchaToken||undefined});setAuthBusy(false);resetCaptcha();
     if(error)setFormError(error.message);else setFormNotice("Check your email for the password reset link.");
   };
   return <main className="welcome-shell" data-theme={theme}><a className="skip-link" href="#access-panel">Skip to sign in</a>
@@ -141,6 +149,7 @@ function Welcome({onEnter,theme,setTheme}:{onEnter:(p:Portal,brand?:BrandData)=>
         {recoveryMode&&<label><span>Confirm new password</span><input value={confirmPassword} onChange={event=>setConfirmPassword(event.target.value)} type={showPassword?"text":"password"} aria-label="Confirm new password" autoComplete="new-password"/></label>}
         {(authMode==="signup"||recoveryMode)&&<p className="field-help">Use at least 15 characters. Announcement Hub never creates passwords from names, phone numbers or organization codes.</p>}
         {!recoveryMode&&authMode==="signin"&&method==="password"&&<div className="access-options single"><button type="button" onClick={recoverPassword}>Forgot password?</button></div>}
+        {!recoveryMode&&turnstileSiteKey&&<div className="captcha-field"><Turnstile ref={captchaRef} siteKey={turnstileSiteKey} options={{theme:"auto",size:"flexible",action:authMode==="signup"?"owner_signup":"sign_in"}} onSuccess={setCaptchaToken} onExpire={()=>setCaptchaToken("")} onError={()=>{setCaptchaToken("");setFormError("The security check could not be completed. Please try again.")}}/></div>}
         {formError&&<p className="inline-error" role="alert"><CircleAlert size={16}/>{formError}</p>}
         {formNotice&&<p className="inline-success" role="status"><Check size={16}/>{formNotice}</p>}
         <button className="primary-action" disabled={authBusy} onClick={continueWithOrganization}>{authBusy?"Please wait…":recoveryMode?"Update password":authMode==="signup"?"Create owner account":method==="password"?current.signInLabel:"Send one-time code"}{!authBusy&&<ArrowRight size={17}/>}</button>

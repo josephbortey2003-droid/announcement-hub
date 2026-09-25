@@ -17,6 +17,9 @@ the hosted development backend.
 - A private organization-logo bucket with membership and owner policies.
 - Browser/server Supabase client factories, session-refresh proxy and an OAuth callback route.
 - Password, email/phone OTP and Google OAuth entry points that remain disabled when public Supabase configuration is absent.
+- Optional Cloudflare Turnstile rendering and CAPTCHA-token forwarding for
+  password, OTP, signup and password-recovery requests. The widget remains
+  hidden until a browser-safe site key is configured.
 - Verified owner onboarding that stores pending organization details locally, waits for email/OAuth verification, then creates the profile, organization, owner membership and default branding through RLS-protected writes.
 - Canonical organization codes protected by a database unique constraint, including a friendly conflict error when another space already owns the code.
 - Atomic organization name, code and color updates through a security-invoker database function; private PNG/JPEG logo storage; signed logo URLs; and tenant-scoped Realtime refreshes for signed-in owner, authority and member portals.
@@ -91,8 +94,9 @@ Still required:
 2. Create a Google OAuth web client, register
    `https://drilgelrfxoluxklcdhp.supabase.co/auth/v1/callback`, and store its
    client ID and secret in Supabase.
-3. Create an hCaptcha or Cloudflare Turnstile site, add its frontend site key,
-   and store its secret in Supabase before exposing owner signup publicly.
+3. Create a Cloudflare Turnstile site, add its browser-safe site key as
+   `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, and store its secret in Supabase before
+   exposing owner signup publicly. The client integration is already present.
 4. Add the server-only Supabase secret to a full-stack deployment's encrypted
    environment settings. Never expose it through a `NEXT_PUBLIC_` variable.
 5. Run the pgTAP suite once Docker or an equivalent test runner is available.

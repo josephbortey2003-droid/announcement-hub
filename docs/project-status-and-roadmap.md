@@ -20,6 +20,7 @@ Last reviewed: 25 September 2026
 | Unique organization codes | Implemented, backend connected | PostgreSQL unique constraint and format check are applied; friendly `23505` handling is implemented. |
 | Password and email OTP sign-in | Implemented, backend connected | Hosted Supabase and exact callback URLs are configured; production SMTP and end-to-end account tests remain. |
 | Google sign-in | Implemented, configuration required | The application and PKCE callback are ready; Google client credentials have not been created or stored. |
+| CAPTCHA protection | Implemented, configuration required | Turnstile renders only when a site key is set and forwards single-use tokens to Supabase Auth; provider keys and Supabase enforcement remain. |
 | Owner organization creation | Implemented, configuration required | Completes after verified authentication and migration deployment. |
 | Organization branding persistence | Implemented, configuration required | Security-invoker RPC, private storage and signed URLs. |
 | Branding propagation to members | Implemented, configuration required | Membership-scoped reads plus RLS-protected Realtime refresh. |
