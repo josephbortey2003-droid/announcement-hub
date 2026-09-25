@@ -24,6 +24,7 @@ The interface currently demonstrates:
 - responsive desktop and mobile layouts;
 - a PostgreSQL/Supabase multi-tenant schema and row-level security tests;
 - Supabase password, OTP and Google OAuth wiring with verified owner-space onboarding, activated only when deployment credentials are present;
+- database-enforced unique organization codes and owner-controlled identity settings that members reload and receive through tenant-scoped Realtime updates;
 - a disabled-by-default, server-side Hubtel SMS adapter with delivery status and cost recording.
 
 Authentication, persistent production data, WhatsApp delivery and live billing are not presented as active features. Real SMS delivery remains disabled until Hubtel and Supabase credentials, sender approval, test recipients and organization limits are configured.
@@ -48,11 +49,19 @@ Open `http://localhost:5173`.
 ```bash
 npm run lint
 npm run build
-npm run test:sms
+npm run test:unit
 ```
 
-Database commands and setup instructions are documented in [docs/backend-setup.md](docs/backend-setup.md).
-Hubtel activation and verification are documented in [docs/hubtel-sms-setup.md](docs/hubtel-sms-setup.md).
+## Documentation
+
+The complete project record starts at [docs/README.md](docs/README.md), including:
+
+- the [product specification](docs/product-specification.md);
+- the [technical architecture](docs/technical-architecture.md);
+- the [current status and roadmap](docs/project-status-and-roadmap.md);
+- the [development history](docs/development-history.md);
+- [backend setup](docs/backend-setup.md);
+- [Hubtel SMS setup](docs/hubtel-sms-setup.md).
 
 ## Environment configuration
 
