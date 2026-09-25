@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(11);
+SELECT plan(14);
 
 select is(
   (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity),
@@ -68,6 +68,33 @@ select ok(
   exists(select 1 from information_schema.table_constraints where constraint_schema='public' and constraint_name='announcement_audiences_group_org_fk') and
   exists(select 1 from information_schema.table_constraints where constraint_schema='public' and constraint_name='recipient_deliveries_membership_org_fk'),
   'audience and delivery references cannot cross tenant boundaries'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_constraint c
+    join pg_class t on t.oid = c.conrelid
+    join pg_namespace n on n.oid = t.relnamespace
+    where n.nspname = 'public'
+      and t.relname = 'organizations'
+      and c.contype = 'u'
+      and pg_get_constraintdef(c.oid) = 'UNIQUE (code)'
+  ),
+  'organization codes are unique at the database boundary'
+);
+
+select ok(
+  not (select prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='update_organization_identity') and
+  not has_function_privilege('anon','public.update_organization_identity(uuid,text,text,text,text,text)','EXECUTE') and
+  has_function_privilege('authenticated','public.update_organization_identity(uuid,text,text,text,text,text)','EXECUTE'),
+  'organization identity updates use caller RLS and require authentication'
+);
+
+select ok(
+  exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='organizations') and
+  exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='organization_branding'),
+  'organization identity changes are available to authenticated realtime subscribers'
 );
 
 SELECT * FROM finish();

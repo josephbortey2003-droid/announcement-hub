@@ -14,6 +14,8 @@ This repository contains the first production-oriented backend foundation. It is
 - Browser/server Supabase client factories, session-refresh proxy and an OAuth callback route.
 - Password, email/phone OTP and Google OAuth entry points that remain disabled when public Supabase configuration is absent.
 - Verified owner onboarding that stores pending organization details locally, waits for email/OAuth verification, then creates the profile, organization, owner membership and default branding through RLS-protected writes.
+- Canonical organization codes protected by a database unique constraint, including a friendly conflict error when another space already owns the code.
+- Atomic organization name, code and color updates through a security-invoker database function; private PNG/JPEG logo storage; signed logo URLs; and tenant-scoped Realtime refreshes for signed-in owner, authority and member portals.
 - pgTAP catalogue tests under `supabase/tests/`.
 - Local Auth defaults that disable public signup, require confirmed email, use a 15-character minimum password and limit logo files to 1 MiB.
 
@@ -78,6 +80,8 @@ Docker is not installed on the current workstation, so the migration and pgTAP t
 - Role selection in the UI is never trusted for authorization.
 - Tenant ownership is represented by immutable UUIDs, not organization codes.
 - Organization codes are login/discovery aids only.
+- Branding is stored once per organization. Every portal resolves it from the authenticated membership rather than from the selected login role or device-local state.
+- Organization identity changes are published through Supabase Realtime only after RLS confirms the subscriber belongs to that organization.
 - `service_role` credentials belong only in trusted server or worker code.
 - Authorization helpers live in a non-exposed `private` schema and explicitly check `auth.uid()`.
 - Every outbound announcement snapshots its recipients so later group changes cannot rewrite history.
@@ -86,4 +90,4 @@ Docker is not installed on the current workstation, so the migration and pgTAP t
 
 ## Next implementation slice
 
-After local PostgreSQL verification, replace the workspace preview arrays with authenticated database queries, starting with organizations, memberships and branding. Then connect member invitations and CSV imports. Keep live SMS disabled until tenant, authority and audience policy tests pass.
+After local PostgreSQL verification, replace the remaining workspace preview arrays with authenticated database queries, starting with memberships and groups. Then connect member invitations and CSV imports. Keep live SMS disabled until tenant, authority and audience policy tests pass.
