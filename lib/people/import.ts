@@ -11,7 +11,8 @@ export type ImportedPerson = { name: string; email: string; phone: string; group
 export type ImportProblem = { row: number; message: string };
 export type ImportResult = { people: ImportedPerson[]; problems: ImportProblem[] };
 
-export const MAX_IMPORT_ROWS = 5_000;
+/** Matches the per-call limit of the import_directory_entries database function. */
+export const MAX_IMPORT_ROWS = 500;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const HEADER_WORDS = new Set(["name", "full name", "fullname", "email", "e-mail", "phone", "telephone", "mobile", "group"]);
 

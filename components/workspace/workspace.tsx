@@ -9,7 +9,7 @@ import { MobileWorkspaceChrome, Sidebar } from "@/components/workspace/chrome";
 import { AuthorityDashboard, CreatorDashboard, MemberDashboard } from "@/components/workspace/dashboards";
 import { getPublicSupabaseConfig } from "@/lib/supabase/config";
 import {
-  mergeNewPeople, readableText,
+  mergeNewPeople, reachablePeople, readableText,
   type Authority, type AuthorityView, type BrandData, type CreatorView, type Group, type MemberView, type Modal,
   type Person, type Portal, type PublishedAnnouncement, type ThemeMode, type Viewer,
 } from "@/lib/workspace/model";
@@ -64,6 +64,31 @@ export function Workspace(props: WorkspaceProps) {
 
   const closeModal = useCallback(() => setModal(null), []);
 
+  // A signed-in owner works on the saved organization directory; everyone else uses preview data.
+  const savedDirectory = viewer.signedIn && portal === "creator" && Boolean(brand.organizationId) && getPublicSupabaseConfig() !== null;
+  // savedDirectory cannot change while the workspace is mounted, so loading starts immediately.
+  const [directoryState, setDirectoryState] = useState<"idle" | "loading" | "ready" | "error">(() => (savedDirectory ? "loading" : "idle"));
+
+  useEffect(() => {
+    if (!savedDirectory) return;
+    let active = true;
+    void (async () => {
+      try {
+        const [{ getBrowserClient }, { loadOrganizationDirectory }] = await Promise.all([import("@/lib/supabase/browser-auth"), import("@/lib/supabase/directory")]);
+        const snapshot = await loadOrganizationDirectory(getBrowserClient(), brand.organizationId!);
+        if (!active) return;
+        setPeople(snapshot.people);
+        setGroups(snapshot.groups);
+        setDirectoryState("ready");
+      } catch (error) {
+        if (!active) return;
+        setDirectoryState("error");
+        notify("error", error instanceof Error ? error.message : "The organization directory could not be loaded.");
+      }
+    })();
+    return () => { active = false; };
+  }, [savedDirectory, brand.organizationId, setPeople, setGroups, notify]);
+
   // Signed-in members receive organization identity changes live.
   useEffect(() => {
     if (!brand.organizationId || getPublicSupabaseConfig() === null) return;
@@ -77,12 +102,20 @@ export function Workspace(props: WorkspaceProps) {
   }, [brand.organizationId, setBrand]);
 
   const commit = async (value: ModalResult) => {
-    if (Array.isArray(value) || "email" in value) {
-      const incoming = Array.isArray(value) ? value : [value];
-      const { added, skipped } = mergeNewPeople(people, incoming);
-      if (!added.length) throw new Error(incoming.length === 1 ? "That email or phone number is already in the directory." : "Everyone in this import is already in the directory.");
+    if ("kind" in value) {
+      const { added, skipped } = mergeNewPeople(people, value.people);
+      if (!added.length) throw new Error(value.people.length === 1 ? "That email or phone number is already in the directory." : "Everyone in this import is already in the directory.");
+      const skippedNote = skipped ? ` ${skipped} already in the directory ${skipped === 1 ? "was" : "were"} skipped.` : "";
+      if (savedDirectory) {
+        const [{ getBrowserClient }, { importOrganizationPeople }] = await Promise.all([import("@/lib/supabase/browser-auth"), import("@/lib/supabase/directory")]);
+        const snapshot = await importOrganizationPeople(getBrowserClient(), brand.organizationId!, value.source, added);
+        setPeople(snapshot.people);
+        setGroups(snapshot.groups);
+        notify("success", `${added.length} ${added.length === 1 ? "person" : "people"} saved to the organization directory.${skippedNote}`);
+        return;
+      }
       setPeople((current) => [...current, ...added]);
-      notify("success", `${added.length} preview ${added.length === 1 ? "member" : "members"} added.${skipped ? ` ${skipped} already in the directory ${skipped === 1 ? "was" : "were"} skipped.` : ""}`);
+      notify("success", `${added.length} preview ${added.length === 1 ? "member" : "members"} added.${skippedNote}`);
       return;
     }
     if ("personId" in value) {
@@ -91,6 +124,13 @@ export function Workspace(props: WorkspaceProps) {
       return;
     }
     if ("type" in value) {
+      if (savedDirectory) {
+        const [{ getBrowserClient }, { createOrganizationGroup }] = await Promise.all([import("@/lib/supabase/browser-auth"), import("@/lib/supabase/directory")]);
+        const group = await createOrganizationGroup(getBrowserClient(), brand.organizationId!, value);
+        setGroups((current) => [...current, group].sort((a, b) => a.name.localeCompare(b.name)));
+        notify("success", "Group saved for the organization.");
+        return;
+      }
       setGroups((current) => [...current, value]);
       notify("success", "Preview group added.");
       return;
@@ -143,7 +183,7 @@ export function Workspace(props: WorkspaceProps) {
       {mobileOpen && <button type="button" className="menu-backdrop" onClick={() => setMobileOpen(false)} aria-label="Close navigation" />}
       <section className="content-shell" id="workspace-content">
         {portal === "creator" ? (
-          <CreatorDashboard view={creatorView} setView={setCreatorView} setModal={setModal} warn={(text) => notify("error", text)} people={people} groups={groups} authorities={authorities} brand={brand} announcements={announcements} onPublish={publish} />
+          <CreatorDashboard view={creatorView} setView={setCreatorView} setModal={setModal} warn={(text) => notify("error", text)} people={people} groups={groups} authorities={authorities} brand={brand} announcements={announcements} onPublish={publish} saved={savedDirectory} directoryState={directoryState} />
         ) : portal === "authority" ? (
           <AuthorityDashboard view={authorityView} setView={setAuthorityView} notify={(text) => notify("error", text)} groups={authorityGroups} people={people} announcements={announcements} onPublish={publish} organizationName={brand.name} />
         ) : (
@@ -155,7 +195,7 @@ export function Workspace(props: WorkspaceProps) {
           <button type="button" onClick={onExit}><LogOut size={15} /> {viewer.signedIn ? "Sign out" : "Leave preview"}</button>
         </footer>
       </section>
-      {modal && <ActionModal type={modal} close={closeModal} commit={commit} people={people} groups={groups} brand={brand} />}
+      {modal && <ActionModal type={modal} close={closeModal} commit={commit} people={reachablePeople(people, savedDirectory)} groups={groups} brand={brand} />}
       {notice && (
         <div className={`toast ${notice.type}`} role={notice.type === "error" ? "alert" : "status"}>
           {notice.type === "success" ? <Check size={18} /> : <CircleAlert size={18} />}

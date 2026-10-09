@@ -223,3 +223,49 @@ test("only owners can change organization identity", async () => {
   const { rows } = await db.query("select name from public.organizations where id = $1", [ORG_A]);
   assert.equal(rows[0].name, "Org A Renamed");
 });
+
+// Organization directory (supabase/migrations/20260925204035 and 20260925204318)
+
+const importAs = (userId, organizationId, entries) =>
+  asUser(userId, "select public.import_directory_entries($1, 'csv', $2::jsonb) as result", [organizationId, JSON.stringify(entries)]);
+
+test("an owner can import people, and missing groups are created case-insensitively", async () => {
+  await importAs(USERS.ownerA, ORG_A, [
+    { fullName: "Ama Mensah", email: "ama@example.test", phoneE164: "+233241234567", groupName: "science" },
+    { fullName: "Kojo Asante", email: "kojo@example.test", phoneE164: "", groupName: "Finance" },
+  ]);
+  const people = await asUser(USERS.ownerA, "select full_name, onboarding_status from public.organization_directory order by full_name");
+  assert.deepEqual(people.rows, [{ full_name: "Ama Mensah", onboarding_status: "staged" }, { full_name: "Kojo Asante", onboarding_status: "staged" }]);
+  // "science" matched the existing "Science" group instead of creating a duplicate.
+  const groups = await asUser(USERS.ownerA, "select name from public.groups order by name");
+  assert.deepEqual(groups.rows.map((row) => row.name), ["Finance", "Science"]);
+  const audit = await asUser(USERS.ownerA, "select action from public.audit_events where action = 'directory.imported'");
+  assert.equal(audit.rows.length, 1);
+});
+
+test("an import with a duplicate email saves nobody", async () => {
+  await rejectsWithCode(
+    importAs(USERS.ownerA, ORG_A, [
+      { fullName: "New Person", email: "new@example.test", phoneE164: "", groupName: "" },
+      { fullName: "Ama Again", email: "AMA@example.test", phoneE164: "", groupName: "" },
+    ]),
+    "23505",
+    "duplicate emails must be refused"
+  );
+  const { rows } = await asUser(USERS.ownerA, "select count(*)::int as count from public.organization_directory where email = 'new@example.test'");
+  assert.equal(rows[0].count, 0);
+});
+
+test("only the organization's owner can import or read its directory", async () => {
+  await rejectsWithCode(importAs(USERS.memberA, ORG_A, [{ fullName: "Sneaky", email: "s@example.test" }]), "42501", "members cannot import");
+  await rejectsWithCode(importAs(USERS.ownerB, ORG_A, [{ fullName: "Sneaky", email: "s@example.test" }]), "42501", "other owners cannot import");
+  const member = await asUser(USERS.memberA, "select id from public.organization_directory");
+  assert.equal(member.rows.length, 0);
+  const otherOwner = await asUser(USERS.ownerB, "select id from public.organization_directory");
+  assert.equal(otherOwner.rows.length, 0);
+});
+
+test("imports are limited to 500 people per call", async () => {
+  const entries = Array.from({ length: 501 }, (_, i) => ({ fullName: `Person ${i}`, email: `p${i}@example.test` }));
+  await rejectsWithCode(importAs(USERS.ownerA, ORG_A, entries), "22023", "oversized imports must be refused");
+});

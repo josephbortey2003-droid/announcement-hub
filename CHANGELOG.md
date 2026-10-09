@@ -2,6 +2,48 @@
 
 Every change is listed with **where in the code** it lives, so a reviewer can go straight to the implementation.
 
+## 9 October 2026: organization directory saved to the database
+
+Branch: `feature/persist-organization-directory`
+
+A signed-in owner's **People** and **Groups** screens now save to and load from Supabase instead of browser memory. Preview mode is unchanged.
+
+### What works now
+
+- **Loading:** when an owner signs in, the workspace loads the saved directory (people, their groups and their onboarding status) and the organization's groups.
+  - **Where in the code:** `lib/supabase/directory.ts`: `loadOrganizationDirectory`; `components/workspace/workspace.tsx`: the `savedDirectory` effect.
+- **Adding people:** one person, a CSV file or pasted rows are validated in the browser (`lib/people/import.ts`), then sent to the `import_directory_entries` database function. The function checks that the caller is the owner, creates missing groups by name (case-insensitively), records an import and an audit event, and runs as one transaction: a duplicate email or phone saves **nobody**. People already in the directory are skipped before sending.
+  - **Where in the code:** `lib/supabase/directory.ts`: `importOrganizationPeople`; `components/workspace/action-modal.tsx`: `build()` now returns the import source (`individual`, `csv` or `paste`); `components/workspace/workspace.tsx`: `commit`.
+- **Adding groups:** saved to the `groups` table; duplicate names are refused by the database's case-insensitive unique index.
+  - **Where in the code:** `lib/supabase/directory.ts`: `createOrganizationGroup`.
+- **Status column:** the member table shows each saved person's state (Not yet invited, Invited, Active member, Suspended) instead of "Preview record".
+  - **Where in the code:** `lib/workspace/model.ts`: `PersonStatus`, `statusLabel`; `components/workspace/dashboards.tsx`.
+
+### Deliberately not yet possible (stated in the interface)
+
+Announcements and authority assignments need a **membership**, and a person only gets one by accepting an invitation, which has not been built yet. In a saved organization, the composer and the authority dialog therefore list only active members, and the buttons explain why when there are none. Before, the earlier uncommitted version silently let you pick people who could never receive anything.
+- **Where in the code:** `lib/workspace/model.ts`: `reachablePeople`; `components/workspace/dashboards.tsx`; `components/workspace/workspace.tsx`.
+
+### Limits aligned
+
+The import limit is now **500 people per import** everywhere, matching the database function (it was 5,000 in the browser).
+- **Where in the code:** `lib/people/import.ts`: `MAX_IMPORT_ROWS`; `lib/supabase/directory.ts`: `MAX_DIRECTORY_IMPORT`.
+
+### Tests
+
+- **4 new database tests** in `tests/db/rls.test.mjs`, run as real users on PGlite:
+  - an owner's import saves people and reuses existing groups regardless of capitalisation;
+  - a duplicate email saves nobody;
+  - members and other organizations' owners can neither import nor read the directory;
+  - imports over 500 are refused.
+- **5 new unit tests** in `tests/directory-client.test.mjs` check the Supabase calls with a stand-in client: the data mapping, the exact payload sent to `import_directory_entries`, the error messages, the limits checked before any network call, and group creation.
+- **1 new unit test** for `reachablePeople` in `tests/workspace-helpers.test.mjs`.
+- Totals: 32 unit tests and 16 database tests.
+
+### Not verified
+
+Signing in as a real owner on the hosted project was not exercised end to end, because that requires creating an account on the live Supabase project. Test it by signing up as an owner, adding people and groups, and refreshing the page: they should still be there.
+
 ## 9 October 2026: security, correctness, code structure and test coverage
 
 Branch: `improve/security-quality-docs`

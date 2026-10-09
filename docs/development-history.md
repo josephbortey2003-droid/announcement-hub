@@ -124,6 +124,10 @@ A full review of the database policies, server routes and interface. Full detail
 
 Decision: database rules are tested by *behavior* (acting as real users) in addition to the existing pgTAP catalogue checks, because a policy can exist and still be wrong. The behavioral tests found the member-reference bug, which the catalogue checks could not.
 
+### Organization directory connected (9 October 2026)
+
+Signed-in owners' People and Groups screens now save to Supabase through `lib/supabase/directory.ts`, using the `import_directory_entries` function from the 25 September directory migrations. These migrations had been applied to the hosted database without being committed; the earlier wiring for them was left uncommitted in a separate working copy and was written against the old single-file interface, so it was rebuilt for the component structure. Decision: announcements and authority stay limited to people with an accepted membership, so the interface never offers recipients who cannot receive anything. See [CHANGELOG.md](../CHANGELOG.md).
+
 ## Design references and skills consulted
 
 The project used the supplied UI/UX, frontend, mobile, animation, accessibility, color, typography and 21st.dev references as design guidance. Later direct product decisions override early generated design-system suggestions. External reference material was treated as inspiration, not copied customer evidence or factual product claims.
