@@ -33,6 +33,7 @@ Last reviewed: 9 October 2026
 | In-app delivery records | Implemented, backend connected | Publishing creates one delivery per recipient, with the SMS fallback due time; no server secret needed. |
 | Read receipts and inbox persistence | Implemented, backend connected | Members' inbox loads their own deliveries; *Mark as read* records a receipt once; owners and leaders see read counts. Not yet exercised with real accounts. |
 | Hubtel SMS send/status | Implemented, disabled | Requires credentials, sender approval, test recipients, database and full-stack deployment. |
+| Email copies of announcements | Implemented, configuration required | Edge Function deployed; sends through Resend once `RESEND_API_KEY`, `EMAIL_FROM` and a verified domain are set (docs/email-setup.md). Behavior- and unit-tested; real sending not yet exercised. |
 | WhatsApp delivery | Planned | No production integration is claimed. |
 | Billing balance | Planned | Ledger schema exists; no real account balance or top-up workflow. |
 | Privacy and Terms pages | Draft | Require legal review before launch. |
@@ -43,8 +44,8 @@ Last reviewed: 9 October 2026
 At the current revision:
 
 - ESLint and the TypeScript type check pass.
-- 38 unit tests pass.
-- 34 behavioral database tests pass on PGlite, and the six attack tests fail when the hardening migration is removed.
+- 46 unit tests pass.
+- 36 behavioral database tests pass on PGlite, and the six attack tests fail when the hardening migration is removed.
 - The full application build passes.
 - The GitHub Pages build passes.
 - Organization identity remains visible across mobile and desktop responsive layouts.

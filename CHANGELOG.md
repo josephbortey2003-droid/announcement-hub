@@ -2,6 +2,52 @@
 
 Every change is listed with **where in the code** it lives, so a reviewer can go straight to the implementation.
 
+## 9 October 2026: email copies of announcements
+
+Branch: `feature/email-notifications` (built on `feature/announcements`)
+
+After an announcement is published, every recipient can also receive it by email. This is switched off until an email service is configured; follow [docs/email-setup.md](docs/email-setup.md).
+
+### How it works
+
+- **Edge Function `notify-announcement`** (deployed to the hosted project). The app calls it right after publishing, with the publisher's session. It:
+  - confirms that the caller is the owner or the announcement's author, using the `sent_announcements` check;
+  - reads unread recipients with confirmed emails using the service role;
+  - sends them through Resend in batches of up to 100, with an idempotency key;
+  - records each result.
+  - **Where in the code:** `supabase/functions/notify-announcement/index.ts`.
+- **Message building and sending** live in a plain module shared by the function and the unit tests. Each email has a plain-text and an HTML version, with the organization, the title, the message, an "Open in Announcement Hub" link and a footer explaining why it was received. Urgent and important announcements are marked in the subject. Announcement text is HTML-escaped, so it cannot inject markup.
+  - **Where in the code:** `supabase/functions/_shared/announcement-email.ts`.
+- **Database:** each delivery gains `email_status`, `email_sent_at`, `email_provider_id` and `email_error`. Two functions are callable **only by the service role**:
+  - `announcement_email_batch` returns recipients still needing an email (active, confirmed email, not yet emailed, not yet read in the app). Email addresses never reach a browser.
+  - `record_email_results` stores outcomes and never overwrites one already recorded.
+  - **Where in the code:** `supabase/migrations/20261009074703_announcement_email.sql`.
+- **App:** after publishing, the message says how many inboxes received the announcement and how many emails were sent or failed, or that email is not set up yet. Email can never undo or block publishing.
+  - **Where in the code:** `lib/supabase/announcements.ts`: `notifyAnnouncementByEmail` (calls again until a large audience is fully handled); `components/workspace/workspace.tsx`: `publish`.
+
+### Tests and checks
+
+- **2 new database tests** (36 in total):
+  - owners cannot read email addresses or record results; only the service role can;
+  - emails go only to unread, confirmed recipients, are sent once, results are stored (errors trimmed to 300 characters), and recorded results are never overwritten.
+- The "no elevated public function" test now matches the rule Supabase's advisor checks: no `SECURITY DEFINER` function in `public` may be callable by `anon` or `authenticated`. Service-role-only functions are allowed.
+- **8 new unit tests** (46 in total):
+  - message content, priority subjects, HTML escaping;
+  - one batch request with an idempotency key, and ids matched to deliveries;
+  - provider errors and network failures;
+  - the 100-email limit;
+  - the app's repeat-until-done loop, and the "not configured" or "not deployed" cases.
+- **The deployed function was probed:**
+  - without sign-in: 401;
+  - with an invalid body: 400;
+  - with a valid body and no secrets: `{"configured": false}`.
+- Supabase's security advisor reports no issues.
+- `tsconfig.json` excludes `supabase/functions` (Deno code). The shared module is covered by the Node tests.
+
+### Not verified
+
+Real sending, which needs a Resend account, a verified domain and the secrets in [docs/email-setup.md](docs/email-setup.md).
+
 ## 9 October 2026: real announcements, member inbox and read receipts
 
 Branch: `feature/announcements`

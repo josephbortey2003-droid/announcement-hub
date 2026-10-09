@@ -65,6 +65,7 @@ The complete project record starts at [docs/README.md](docs/README.md), includin
 - the [development history](docs/development-history.md);
 - [backend setup](docs/backend-setup.md);
 - [Hubtel SMS setup](docs/hubtel-sms-setup.md);
+- [Email setup](docs/email-setup.md);
 - the [changelog](CHANGELOG.md), which lists every change with its location in the code.
 
 ## Environment configuration

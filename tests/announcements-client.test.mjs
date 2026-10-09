@@ -75,3 +75,24 @@ test("a leader's publishing scope skips revoked, expired and non-publishing gran
     { id: "g2", name: "Science", type: "Department" },
   ]);
 });
+
+test("email notification keeps calling until every recipient is handled", async () => {
+  const { notifyAnnouncementByEmail } = await import("../lib/supabase/announcements.ts");
+  const replies = [
+    { data: { configured: true, sent: 500, failed: 0, remaining: true }, error: null },
+    { data: { configured: true, sent: 40, failed: 2, remaining: false }, error: null },
+  ];
+  const calls = [];
+  const client = { functions: { invoke: async (name, options) => { calls.push({ name, options }); return replies.shift(); } } };
+  assert.deepEqual(await notifyAnnouncementByEmail(client, "org-1", "a1"), { configured: true, sent: 540, failed: 2 });
+  assert.deepEqual(calls[0], { name: "notify-announcement", options: { body: { organizationId: "org-1", announcementId: "a1" } } });
+  assert.equal(calls.length, 2);
+});
+
+test("email notification reports when email is not configured or not deployed", async () => {
+  const { notifyAnnouncementByEmail } = await import("../lib/supabase/announcements.ts");
+  const notConfigured = { functions: { invoke: async () => ({ data: { configured: false, sent: 0, failed: 0, remaining: false }, error: null }) } };
+  assert.deepEqual(await notifyAnnouncementByEmail(notConfigured, "org-1", "a1"), { configured: false, sent: 0, failed: 0 });
+  const missing = { functions: { invoke: async () => ({ data: null, error: new Error("404") }) } };
+  assert.equal(await notifyAnnouncementByEmail(missing, "org-1", "a1"), null);
+});

@@ -373,7 +373,7 @@ test("people from another organization cannot be invited", async () => {
   await rejectsWithCode(invite(USERS.ownerA, [id(999)]), "22023", "unknown directory entries must be refused");
 });
 
-test("signed-out visitors can run only the invitation preview, and elevated functions stay private", async () => {
+test("signed-out visitors can run only the invitation preview, and no elevated public function is callable by users", async () => {
   const anonymous = await db.query(`
     select n.nspname || '.' || p.proname as name from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname in ('public', 'private') and has_function_privilege('anon', p.oid, 'EXECUTE')
@@ -384,6 +384,7 @@ test("signed-out visitors can run only the invitation preview, and elevated func
   const exposedDefiners = await db.query(`
     select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.prosecdef
+      and (has_function_privilege('anon', p.oid, 'EXECUTE') or has_function_privilege('authenticated', p.oid, 'EXECUTE'))
       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`);
   assert.deepEqual(exposedDefiners.rows, []);
 });
@@ -471,4 +472,50 @@ test("owners see all sent announcements with read counts; authorities see their 
   assert.deepEqual([...new Set(authority.rows.map((row) => row.title))].sort(), ["Lab closed", "Science lab"]);
   assert.ok(owner.rows.length > authority.rows.length);
   await rejectsWithCode(asUser(USERS.memberA, "select * from public.sent_announcements($1)", [ORG_A]), "42501", "members cannot see sent history");
+});
+
+// Email copies of announcements (*_announcement_email.sql)
+
+const asServiceRole = (sql, params = []) => db.transaction(async (tx) => {
+  await tx.exec("set local role service_role");
+  return tx.query(sql, params);
+});
+
+test("only the service role can read recipients' email addresses", async () => {
+  const { rows } = await publish(USERS.ownerA, { whole: true }, { title: "Email check" });
+  const announcement = rows[0].result.announcementId;
+  await rejectsWithCode(asUser(USERS.ownerA, "select * from public.announcement_email_batch($1)", [announcement]), "42501", "owners cannot read addresses");
+  await rejectsWithCode(asUser(USERS.ownerA, "select public.record_email_results('[]'::jsonb)"), "42501", "owners cannot record results");
+});
+
+test("emails go to unread, confirmed recipients once, and results are recorded", async () => {
+  const { rows } = await publish(USERS.ownerA, { whole: true }, { title: "Email test" });
+  const announcement = rows[0].result.announcementId;
+  // Ama reads it in the app first, so she is not emailed.
+  const amaDelivery = (await db.query(
+    "select d.id from public.recipient_deliveries d join public.memberships m on m.id = d.membership_id where d.announcement_id = $1 and m.user_id = $2",
+    [announcement, USERS.ama])).rows[0].id;
+  await asUser(USERS.ama, "select public.mark_announcement_read($1)", [amaDelivery]);
+
+  const batch = await asServiceRole("select * from public.announcement_email_batch($1)", [announcement]);
+  assert.deepEqual(batch.rows.map((row) => row.email).sort(), ["leader-a@example.test", "member-a@example.test"]);
+  assert.equal(batch.rows[0].organization_name, "Org A Renamed");
+  assert.equal(batch.rows[0].title, "Email test");
+
+  const [sent, failed] = batch.rows;
+  const recorded = await asServiceRole("select public.record_email_results($1::jsonb) as count", [JSON.stringify([
+    { deliveryId: sent.delivery_id, status: "sent", providerId: "msg_1", error: null },
+    { deliveryId: failed.delivery_id, status: "failed", providerId: null, error: "x".repeat(400) },
+  ])]);
+  assert.equal(recorded.rows[0].count, 2);
+  const stored = await db.query("select email_status, email_provider_id, length(email_error) as error_length, email_sent_at is not null as has_time from public.recipient_deliveries where id = any($1::uuid[]) order by email_status desc", [[sent.delivery_id, failed.delivery_id]]);
+  assert.deepEqual(stored.rows, [
+    { email_status: "sent", email_provider_id: "msg_1", error_length: null, has_time: true },
+    { email_status: "failed", email_provider_id: null, error_length: 300, has_time: false },
+  ]);
+
+  // Nobody is emailed twice, and recorded results are never overwritten.
+  assert.equal((await asServiceRole("select * from public.announcement_email_batch($1)", [announcement])).rows.length, 0);
+  const again = await asServiceRole("select public.record_email_results($1::jsonb) as count", [JSON.stringify([{ deliveryId: sent.delivery_id, status: "failed", providerId: null, error: "late" }])]);
+  assert.equal(again.rows[0].count, 0);
 });

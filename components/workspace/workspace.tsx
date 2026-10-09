@@ -208,11 +208,20 @@ export function Workspace(props: WorkspaceProps) {
   const publish = async (draft: AnnouncementDraft) => {
     if (connected) {
       // Errors are thrown back to the composer, which shows them and lets the author retry.
-      const [{ getBrowserClient }, { publishAnnouncement }] = await Promise.all([import("@/lib/supabase/browser-auth"), import("@/lib/supabase/announcements")]);
-      const result = await publishAnnouncement(getBrowserClient(), brand.organizationId!, draft);
-      notify("success", result.duplicate
-        ? "This announcement was already published; no copy was sent."
-        : `Announcement delivered to ${result.recipientCount} ${result.recipientCount === 1 ? "member's inbox" : "members' inboxes"}.`);
+      const [{ getBrowserClient }, { notifyAnnouncementByEmail, publishAnnouncement }] = await Promise.all([import("@/lib/supabase/browser-auth"), import("@/lib/supabase/announcements")]);
+      const client = getBrowserClient();
+      const result = await publishAnnouncement(client, brand.organizationId!, draft);
+      if (result.duplicate) {
+        notify("success", "This announcement was already published; no copy was sent.");
+      } else {
+        const delivered = `Announcement delivered to ${result.recipientCount} ${result.recipientCount === 1 ? "member's inbox" : "members' inboxes"}`;
+        notify("success", `${delivered}. Sending email copies…`);
+        // Publishing has succeeded; email is a best-effort extra and never undoes it.
+        const email = await notifyAnnouncementByEmail(client, brand.organizationId!, result.announcementId).catch(() => null);
+        notify(email?.failed ? "error" : "success", !email || !email.configured
+          ? `${delivered}. Email copies are not set up yet.`
+          : `${delivered} and emailed to ${email.sent} ${email.sent === 1 ? "person" : "people"}${email.failed ? `; ${email.failed} ${email.failed === 1 ? "email" : "emails"} failed` : ""}.`);
+      }
       await loadAnnouncements().catch(() => undefined);
       if (portal === "creator") setCreatorView("announcements");
       else setAuthorityView("history");

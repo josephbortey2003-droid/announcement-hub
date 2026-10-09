@@ -143,6 +143,16 @@ Delivery deliberately uses the owner's own WhatsApp or email instead of a paid p
 
 Publishing moved from a multi-step server route (which needed a never-configured service-role secret and used compensating deletes) into one database transaction, `publish_announcement`, called directly from the browser. Members get a real inbox with read receipts; senders see read counts. Decision: the author is no longer sent their own announcement. See [CHANGELOG.md](../CHANGELOG.md).
 
+### Email copies of announcements (9 October 2026)
+
+A `notify-announcement` Edge Function emails recipients through Resend after publishing. Decisions:
+- email addresses are read only by service-role functions;
+- each delivery records its email outcome, so nobody is emailed twice;
+- recipients who already read in the app are skipped;
+- email can never block or undo publishing.
+
+Switched off until an email service and domain are configured ([email-setup.md](email-setup.md)).
+
 ## Design references and skills consulted
 
 The project used the supplied UI/UX, frontend, mobile, animation, accessibility, color, typography and 21st.dev references as design guidance. Later direct product decisions override early generated design-system suggestions. External reference material was treated as inspiration, not copied customer evidence or factual product claims.
