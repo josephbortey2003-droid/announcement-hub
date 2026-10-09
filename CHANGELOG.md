@@ -17,7 +17,7 @@ Branch: `improve/security-quality-docs`
 - an announcement's organization can never change, even for the service role (trigger).
 
 **Where in the code**
-- `supabase/migrations/20261009090000_harden_announcement_writes.sql`: sections 1 and 2
+- `supabase/migrations/20261009070117_harden_announcement_writes.sql`: sections 1 and 2
 - `tests/db/rls.test.mjs`: tests "an authority cannot write announcements directly…", "…cannot move an announcement into another organization" and "an announcement author must belong to the announcement's organization"
 
 #### 2. Read receipts for someone else's delivery (fixed)
@@ -27,7 +27,7 @@ Branch: `improve/security-quality-docs`
 **Fix.** A composite foreign key ties each receipt to a delivery with the same membership and organization. Clients can insert only the three identifying columns, so the database always sets `read_at`.
 
 **Where in the code**
-- `supabase/migrations/20261009090000_harden_announcement_writes.sql`: section 3
+- `supabase/migrations/20261009070117_harden_announcement_writes.sql`: section 3
 - `tests/db/rls.test.mjs`: tests "a member cannot file a read receipt for someone else's delivery", "…cannot backdate a read receipt" and "a member can mark their own delivery as read…"
 
 ### Bug fixes
@@ -39,7 +39,7 @@ Branch: `improve/security-quality-docs`
 **Fix.** References stay unique when present, and any number of members may have none (partial unique index).
 
 **Where in the code**
-- `supabase/migrations/20261009090100_allow_members_without_reference.sql`
+- `supabase/migrations/20261009070124_allow_members_without_reference.sql`
 - `tests/db/rls.test.mjs`: test "many members can join without a member reference, but references stay unique"
 
 #### 4. Publish route: authorization order, stable paging, audit errors
@@ -111,6 +111,10 @@ Branch: `improve/security-quality-docs`
 - `tsconfig.json`: `allowImportingTsExtensions`, so library files can import each other with `.ts` extensions that Node's test runner can load.
 - New dev dependency: `@electric-sql/pglite` 0.5.6 (exact version).
 
-### Needs action by the project owner
+### Hosted database (applied 9 October 2026)
 
-The two new migrations are **not yet applied** to the hosted Supabase project. Apply them with `npx supabase db push` (or the Supabase dashboard), then regenerate types with `npm run supabase:types`. The application code works with or without them, but the security fixes take effect only once they are applied.
+- The hosted project had been paused for inactivity; it was restored first.
+- Both new migrations were applied to the hosted project. Supabase recorded them as `20261009070117` and `20261009070124`, and the repository files carry the same versions so `supabase db push` will not re-apply them.
+- Verified on the hosted database: browser sessions cannot insert or update announcements or set `read_at`; the new foreign keys, trigger and partial unique index exist, and the old member-reference constraint is gone. The Supabase security advisor reports no issues. The performance advisor reports only informational notices: foreign keys without covering indexes, and indexes not yet used because the database is empty.
+- **Repository brought in line with the hosted database.** Two migrations that had been applied on 25 September but never committed are now in the repository: `20260925204035_add_organization_directory.sql` (a staging roster of people before they accept an invitation) and `20260925204318_add_directory_import_function.sql` (`import_directory_entries`, a case-insensitive unique group name and owner audit inserts). The database tests run against the full history, and the pgTAP table count is now 21.
+- `lib/supabase/database.types.ts` now matches the hosted schema, including the directory tables and the import function.

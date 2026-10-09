@@ -3,8 +3,8 @@ SELECT plan(17);
 
 select is(
   (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity),
-  19,
-  'all 19 application tables have RLS enabled'
+  21,
+  'all 21 application tables have RLS enabled'
 );
 
 select is(

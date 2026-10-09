@@ -49,7 +49,7 @@ At the current revision:
 - Organization identity remains visible across mobile and desktop responsive layouts.
 - GitHub Actions validates pushes and deploys the preview.
 
-Database migrations up to `20260925200228` are applied to the linked hosted development project. **`20261009090000_harden_announcement_writes.sql` and `20261009090100_allow_members_without_reference.sql` still need to be applied** (`npx supabase db push`), followed by `npm run supabase:types`. The
+Every migration in `supabase/migrations`, including the October 2026 hardening migrations and the organization-directory migrations, is applied to the hosted development project, and the repository versions match the hosted migration history. The security advisor reports no issues; the performance advisor reports informational notices only (unindexed foreign keys, unused indexes on an empty database). The
 pgTAP suite still requires Docker or another supported runner. Supabase security
 and performance advisors report no current issues.
 
@@ -70,7 +70,8 @@ and performance advisors report no current issues.
 
 ### Milestone 1: verify the database
 
-- Apply the two October 2026 migrations to the hosted project.
+- Connect the organization directory (`organization_directory`, `import_directory_entries`) to the People screen.
+- Add covering indexes for the foreign keys the performance advisor lists once real query patterns are known.
 
 - Install Docker Desktop or another supported pgTAP runner.
 - Run pgTAP tests against an isolated test database.
