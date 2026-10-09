@@ -1,6 +1,6 @@
 # Announcement Hub documentation
 
-Last reviewed: 25 September 2026
+Last reviewed: 9 October 2026
 
 This directory is the project record for Announcement Hub. It distinguishes implemented code, working prototype behavior, integration-ready work, and future plans so that demonstrations and reports do not make unsupported claims.
 
@@ -10,6 +10,7 @@ This directory is the project record for Announcement Hub. It distinguishes impl
 - [Technical architecture](technical-architecture.md): application structure, data model, authorization, delivery pipeline, security and deployment.
 - [Project status and roadmap](project-status-and-roadmap.md): what works now, what remains simulated, validation evidence, limitations and next milestones.
 - [Development history](development-history.md): chronological record of the major changes and design decisions.
+- [Changelog](../CHANGELOG.md): every change, with where it lives in the code.
 - [Backend setup](backend-setup.md): local and hosted Supabase configuration.
 - [Hubtel SMS setup](hubtel-sms-setup.md): controlled activation and verification of SMS delivery.
 - [Design system](../design-system/announcement-hub/MASTER.md): original design reference. The current application CSS is authoritative where later user decisions superseded this early reference.

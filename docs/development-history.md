@@ -1,6 +1,6 @@
 # Development history
 
-Last reviewed: 25 September 2026
+Last reviewed: 9 October 2026
 
 This record summarizes the repository history and the major decisions made during the design and implementation process. Commit hashes identify the corresponding reviewed milestones.
 
@@ -110,6 +110,19 @@ configuration tasks. TypeScript database types were generated from the hosted
 schema and wired into every Supabase client factory. Optional Cloudflare
 Turnstile support now forwards CAPTCHA tokens through signup, password, OTP and
 password-recovery requests without exposing the provider secret in the client.
+
+### Security, correctness and structure review (9 October 2026)
+
+A full review of the database policies, server routes and interface. Full detail, with file locations for every item, is in [CHANGELOG.md](../CHANGELOG.md).
+
+- **Two security holes closed.** An authority could move their own announcement into another organization's inbox, and a member could file a read receipt against someone else's delivery to cancel that person's SMS fallback. Browser sessions can no longer write announcements; receipts must match the reader's own delivery and cannot be backdated (`supabase/migrations/20261009090000_harden_announcement_writes.sql`).
+- **Schema bug fixed.** `NULLS NOT DISTINCT` on member references allowed only one member per organization without a reference (`supabase/migrations/20261009090100_allow_members_without_reference.sql`).
+- **Publish route.** Authorization before the idempotency lookup, ordered pagination and tested recipient rules (`app/api/announcements/publish/route.ts`, `lib/announcements/recipients.ts`).
+- **Member import.** Proper CSV parsing, header detection, email/phone validation, duplicate detection and per-row errors (`lib/people/import.ts`).
+- **Interface.** `app/page.tsx` split into `components/auth` and `components/workspace`; fixed message timing, dialog focus, repeat publishing, phone sign-in, the hard-coded user name, the authority preview scope and static setup progress.
+- **Testing.** Database security tests that run without Docker, using PGlite (`tests/db/rls.test.mjs`); unit tests grew from 8 to 26; CI runs the type check and database tests.
+
+Decision: database rules are tested by *behavior* (acting as real users) in addition to the existing pgTAP catalogue checks, because a policy can exist and still be wrong. The behavioral tests found the member-reference bug, which the catalogue checks could not.
 
 ## Design references and skills consulted
 

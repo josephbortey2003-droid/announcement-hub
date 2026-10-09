@@ -44,6 +44,23 @@ The GitHub Pages preview contains only the browser interface. Server API routes,
 
 ## 3. Application boundaries
 
+### Source layout
+
+| Path | Responsibility |
+| --- | --- |
+| `app/page.tsx` | Top-level state; switches between sign-in and the workspace |
+| `components/auth/welcome.tsx` | Sign-in, owner sign-up, one-time codes, password recovery |
+| `components/workspace/` | Workspace shell, navigation, dashboards and dialogs |
+| `components/announcement/audience-composer.tsx` | Announcement drafting, audience building and review |
+| `lib/workspace/` | Shared interface types and pure helpers |
+| `lib/people/import.ts` | CSV/pasted member import and validation |
+| `lib/announcements/` | Preview and server-side recipient resolution |
+| `lib/supabase/` | Browser, server and admin clients; organization access |
+| `lib/sms/` | Hubtel adapter, phone normalization, segments, SMS authorization |
+| `app/api/` | Server routes: publishing and SMS |
+| `supabase/migrations/` | Schema, RLS policies and grants |
+| `tests/`, `tests/db/` | Unit tests and behavioral database tests |
+
 ### Browser-safe code
 
 - role-specific UI and responsive navigation;
@@ -139,7 +156,9 @@ The same `BrandData` and CSS custom properties are used by desktop and mobile. C
 
 ## 9. Announcement publication security
 
-`POST /api/announcements/publish` validates a strict payload and never trusts the browser’s recipient count. It checks tenant membership and authority scope with the server-only client, rejects cross-tenant IDs, resolves active recipients, batches inserts and records an audit event.
+`POST /api/announcements/publish` validates a strict payload and never trusts the browser’s recipient count. It checks tenant membership and authority scope with the server-only client, and only then answers an idempotent retry, which is returned only to the owner or the original author. It rejects cross-tenant IDs, resolves active recipients with `resolveRecipientIds` (`lib/announcements/recipients.ts`) over key-ordered pages, batches inserts and records an audit event.
+
+This route is the **only** write path for announcements. Browser sessions have no `INSERT` or `UPDATE` privilege on `announcements` or its audience tables. An announcement's author must belong to its organization (composite foreign key), and its organization cannot be changed (trigger). Read receipts must reference the reader's own delivery, and `read_at` is set by the database.
 
 Current limitation: the multi-step publication uses compensating deletion for an unpublished draft rather than one PostgreSQL transaction. Moving the complete publication operation into a reviewed database transaction is a recommended hardening step before production.
 
@@ -175,9 +194,11 @@ GitHub Pages is for design and workflow review only. A production deployment mus
 Current automated checks include:
 
 - ESLint;
-- unit tests for organization-code normalization, audience resolution, Ghana phone normalization and SMS segment calculation;
+- TypeScript type check (`npm run typecheck`);
+- unit tests for organization-code normalization, preview and server recipient resolution, member CSV import, sign-in identifiers, workspace helpers, Ghana phone normalization and SMS segment calculation (`npm run test:unit`);
+- behavioral database tests (`npm run test:db`): every migration runs on PGlite (PostgreSQL 17 in WebAssembly, no Docker), then tenant isolation, announcement write protection, read-receipt integrity, member references and identity-update permissions are exercised as real signed-in users;
 - full application build;
 - static Pages build;
 - pgTAP catalogue tests for RLS coverage, grants, tenant constraints, SMS idempotency, unique organization codes, identity-update permissions and Realtime publication configuration.
 
-The pgTAP database suite has not been executed locally because Docker is not installed on the current workstation. This is a documented verification gap, not a passing result.
+The pgTAP catalogue suite has not been executed locally because Docker is not installed on the current workstation. The behavioral PGlite suite covers the same migrations and runs in CI, but PGlite only approximates Supabase's `auth` and `storage` schemas, so the pgTAP run on a real Supabase stack is still recommended.
