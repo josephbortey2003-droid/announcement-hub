@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, Building2, Check, History, Inbox, MessageSquareText, Palette, Plus, ShieldCheck, Sun, UserPlus, Users, WalletCards } from "lucide-react";
+import { Bell, Building2, Check, History, Inbox, MessageSquareText, Palette, Plus, Send, ShieldCheck, Sun, UserPlus, Users, WalletCards } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -121,7 +121,7 @@ export function CreatorDashboard({ view, setView, setModal, warn, people, groups
         <Header
           title="Announcements"
           description="Publish to the whole organization, selected groups or specific people"
-          action={<button type="button" className="primary-action" onClick={() => (reachable.length ? setView("compose") : warn(saved ? "Announcements reach people once they accept an invitation. Invitations are the next stage being built." : "Import at least one member before creating an announcement."))}><Plus size={17} /> New announcement</button>}
+          action={<button type="button" className="primary-action" onClick={() => (reachable.length ? setView("compose") : warn(saved ? "Announcements reach people once they accept an invitation. Invite people from the People page." : "Import at least one member before creating an announcement."))}><Plus size={17} /> New announcement</button>}
         />
         <AnnouncementRecords items={announcements} emptyTitle="No announcements published" emptyBody="Create an announcement, build its audience and review the resolved recipients before publishing." />
       </>
@@ -131,7 +131,18 @@ export function CreatorDashboard({ view, setView, setModal, warn, people, groups
   if (view === "people") {
     return (
       <>
-        <Header title="People" description="Import and review organization members" action={<button type="button" className="primary-action" onClick={() => setModal("people")}><UserPlus size={17} /> Add people</button>} />
+        <Header
+          title="People"
+          description="Import and review organization members"
+          action={
+            <>
+              {saved && people.some((person) => person.status === "staged" || person.status === "invited") && (
+                <button type="button" className="secondary" onClick={() => setModal("invite")}><Send size={17} /> Invite people</button>
+              )}
+              <button type="button" className="primary-action" onClick={() => setModal("people")}><UserPlus size={17} /> Add people</button>
+            </>
+          }
+        />
         {saved && directoryState === "loading" && !people.length ? (
           <EmptyState icon={Users} title="Loading the organization directory" body="Fetching the people saved for this organization." />
         ) : people.length ? (
@@ -168,7 +179,7 @@ export function CreatorDashboard({ view, setView, setModal, warn, people, groups
         <Header
           title="Authorities"
           description="Assign hierarchy levels and audience scope"
-          action={<button type="button" className="primary-action" onClick={() => (reachable.length && groups.length ? setModal("authority") : warn(saved ? "Authority can be given to people once they accept an invitation. Invitations are the next stage being built." : "Add at least one person and one group first."))}><Plus size={17} /> Assign authority</button>}
+          action={<button type="button" className="primary-action" onClick={() => (reachable.length && groups.length ? setModal("authority") : warn(saved ? "Authority can be given to people once they accept an invitation. Invite people from the People page." : "Add at least one person and one group first."))}><Plus size={17} /> Assign authority</button>}
         />
         {authorities.length ? (
           <section className="data-panel">

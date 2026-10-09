@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { CircleAlert, X } from "lucide-react";
 import { isValidOrganizationCode, normalizeOrganizationCode } from "@/lib/organizations/code";
 import { checkPerson, describeProblems, isSafeCell, parsePeopleImport } from "@/lib/people/import";
+import { useDialogFocus } from "@/components/workspace/use-dialog-focus";
 import type { ImportSource } from "@/lib/supabase/directory";
 import type { Authority, BrandData, Group, Modal, Person } from "@/lib/workspace/model";
 
@@ -11,7 +12,7 @@ export type PeopleImport = { kind: "people"; source: ImportSource; people: Perso
 export type ModalResult = PeopleImport | Group | Authority | BrandData;
 
 type ActionModalProps = {
-  type: Exclude<Modal, null>;
+  type: Exclude<Modal, null | "invite">;
   close: () => void;
   commit: (value: ModalResult) => Promise<void>;
   /** People who may be given authority (in a saved organization, only accepted members). */
@@ -20,7 +21,6 @@ type ActionModalProps = {
   brand: BrandData;
 };
 
-const FOCUSABLE = "button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled])";
 const titles = { people: "Add people", authority: "Assign authority", group: "Add group", branding: "Customize appearance" };
 const submitLabels = { people: "Add people", authority: "Assign authority", group: "Add group", branding: "Apply appearance" };
 
@@ -41,30 +41,7 @@ export function ActionModal({ type, close, commit, people, groups, brand }: Acti
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Keep the latest close handler without re-running the focus effect, which would move focus on every parent render.
-  const closeRef = useRef(close);
-  useEffect(() => { closeRef.current = close; }, [close]);
-
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    const dialog = ref.current;
-    dialog?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeRef.current();
-      if (event.key !== "Tab" || !dialog) return;
-      const items = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)];
-      if (!items.length) return;
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      previouslyFocused?.focus();
-    };
-  }, []);
+  useDialogFocus(ref, close);
 
   const chooseFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];

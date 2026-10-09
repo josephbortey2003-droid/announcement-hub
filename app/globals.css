@@ -495,3 +495,16 @@ img,svg,video,canvas{max-width:100%}
 
 /* Preference note below the notification selector */
 .preference-list>.field-help{margin:0;padding:12px 22px 16px}
+
+/* Invitation links dialog (components/workspace/invite-dialog.tsx) */
+.invite-dialog{width:min(680px,100%)}
+.invite-links{margin:16px 0 0;padding:0;list-style:none;display:grid;gap:12px}
+.invite-links li{padding:14px;display:grid;gap:10px;border:1px solid var(--line);border-radius:10px}
+.invite-links li>div:first-child{display:grid;gap:4px;min-width:0}
+.invite-links small{color:var(--muted);font-size:12px}
+.invite-links input{width:100%;min-height:36px;margin-top:4px;padding:0 10px;font:400 12px var(--mono);border:1px solid var(--line);border-radius:6px;background:transparent;color:inherit}
+.invite-actions{display:flex;flex-wrap:wrap;gap:8px}
+.invite-actions .secondary{display:inline-flex;align-items:center;gap:6px;min-height:38px;border-radius:8px;color:inherit;text-decoration:none;cursor:pointer}
+.invite-banner{margin:0 0 16px;padding:14px 16px;display:grid;gap:4px;border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:10px}
+.invite-banner strong{font-size:15px}
+.invite-banner small{color:var(--muted);font-size:12px;line-height:18px}

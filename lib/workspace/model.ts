@@ -8,7 +8,7 @@ export type Portal = "creator" | "authority" | "member";
 export type CreatorView = "overview" | "announcements" | "compose" | "people" | "authorities" | "groups" | "delivery" | "billing" | "branding";
 export type AuthorityView = "inbox" | "compose" | "history";
 export type MemberView = "inbox" | "history" | "preferences";
-export type Modal = "people" | "authority" | "group" | "branding" | null;
+export type Modal = "people" | "authority" | "group" | "branding" | "invite" | null;
 export type ThemeMode = "system" | "light" | "dark";
 
 export type BrandData = { organizationId?: string; name: string; code: string; color: string; secondaryColor: string; logo: string };

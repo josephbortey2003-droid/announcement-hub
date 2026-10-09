@@ -55,7 +55,7 @@ The GitHub Pages preview contains only the browser interface. Server API routes,
 | `lib/workspace/` | Shared interface types and pure helpers |
 | `lib/people/import.ts` | CSV/pasted member import and validation |
 | `lib/announcements/` | Preview and server-side recipient resolution |
-| `lib/supabase/` | Browser, server and admin clients; organization access; organization directory (`directory.ts`) |
+| `lib/supabase/` | Browser, server and admin clients; organization access; organization directory (`directory.ts`); invitations (`invitations.ts`) |
 | `lib/sms/` | Hubtel adapter, phone normalization, segments, SMS authorization |
 | `app/api/` | Server routes: publishing and SMS |
 | `supabase/migrations/` | Schema, RLS policies and grants |

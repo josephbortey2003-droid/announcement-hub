@@ -6,6 +6,7 @@ import { Check, CircleAlert, LogOut, X } from "lucide-react";
 import type { AnnouncementDraft } from "@/components/announcement/audience-composer";
 import { ActionModal, type ModalResult } from "@/components/workspace/action-modal";
 import { MobileWorkspaceChrome, Sidebar } from "@/components/workspace/chrome";
+import { InviteDialog } from "@/components/workspace/invite-dialog";
 import { AuthorityDashboard, CreatorDashboard, MemberDashboard } from "@/components/workspace/dashboards";
 import { getPublicSupabaseConfig } from "@/lib/supabase/config";
 import {
@@ -195,7 +196,25 @@ export function Workspace(props: WorkspaceProps) {
           <button type="button" onClick={onExit}><LogOut size={15} /> {viewer.signedIn ? "Sign out" : "Leave preview"}</button>
         </footer>
       </section>
-      {modal && <ActionModal type={modal} close={closeModal} commit={commit} people={reachablePeople(people, savedDirectory)} groups={groups} brand={brand} />}
+      {modal === "invite" && (
+        <InviteDialog
+          people={people}
+          organizationName={brand.name}
+          close={closeModal}
+          createLinks={async (entryIds) => {
+            const [{ getBrowserClient }, { createInvitations }, { loadOrganizationDirectory }] = await Promise.all([
+              import("@/lib/supabase/browser-auth"), import("@/lib/supabase/invitations"), import("@/lib/supabase/directory"),
+            ]);
+            const client = getBrowserClient();
+            const created = await createInvitations(client, brand.organizationId!, entryIds);
+            const snapshot = await loadOrganizationDirectory(client, brand.organizationId!);
+            setPeople(snapshot.people);
+            setGroups(snapshot.groups);
+            return created;
+          }}
+        />
+      )}
+      {modal && modal !== "invite" && <ActionModal type={modal} close={closeModal} commit={commit} people={reachablePeople(people, savedDirectory)} groups={groups} brand={brand} />}
       {notice && (
         <div className={`toast ${notice.type}`} role={notice.type === "error" ? "alert" : "status"}>
           {notice.type === "success" ? <Check size={18} /> : <CircleAlert size={18} />}
