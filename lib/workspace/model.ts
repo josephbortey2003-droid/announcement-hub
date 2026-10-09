@@ -12,7 +12,9 @@ export type Modal = "people" | "authority" | "group" | "branding" | null;
 export type ThemeMode = "system" | "light" | "dark";
 
 export type BrandData = { organizationId?: string; name: string; code: string; color: string; secondaryColor: string; logo: string };
-export type Person = { id: string; name: string; email: string; phone: string; group: string };
+/** Onboarding state of a saved directory entry. Preview people have no status. */
+export type PersonStatus = "staged" | "invited" | "active" | "suspended";
+export type Person = { id: string; name: string; email: string; phone: string; group: string; status?: PersonStatus; membershipId?: string };
 export type Group = { id: string; name: string; type: string };
 export type Authority = { id: string; personId: string; level: string; scope: string };
 export type PublishedAnnouncement = AnnouncementDraft & { id: string; sender: string; sentAt: string };
@@ -83,3 +85,20 @@ export function setupProgress(input: { brand: BrandData; people: number; groups:
   };
   return { steps, complete: Object.values(steps).filter(Boolean).length, total: Object.keys(steps).length };
 }
+
+/**
+ * People who can receive announcements or hold authority. In the preview everyone can.
+ * In a saved organization only people who accepted an invitation have a membership;
+ * they are addressed by membership id, which is what the publish route expects.
+ */
+export function reachablePeople(people: Person[], saved: boolean): Person[] {
+  if (!saved) return people;
+  return people.filter((person) => person.status === "active" && person.membershipId).map((person) => ({ ...person, id: person.membershipId! }));
+}
+
+export const statusLabel: Record<PersonStatus, string> = {
+  staged: "Not yet invited",
+  invited: "Invited",
+  active: "Active member",
+  suspended: "Suspended",
+};

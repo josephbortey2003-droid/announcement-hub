@@ -4,14 +4,17 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { CircleAlert, X } from "lucide-react";
 import { isValidOrganizationCode, normalizeOrganizationCode } from "@/lib/organizations/code";
 import { checkPerson, describeProblems, isSafeCell, parsePeopleImport } from "@/lib/people/import";
+import type { ImportSource } from "@/lib/supabase/directory";
 import type { Authority, BrandData, Group, Modal, Person } from "@/lib/workspace/model";
 
-export type ModalResult = Person | Person[] | Group | Authority | BrandData;
+export type PeopleImport = { kind: "people"; source: ImportSource; people: Person[] };
+export type ModalResult = PeopleImport | Group | Authority | BrandData;
 
 type ActionModalProps = {
   type: Exclude<Modal, null>;
   close: () => void;
   commit: (value: ModalResult) => Promise<void>;
+  /** People who may be given authority (in a saved organization, only accepted members). */
   people: Person[];
   groups: Group[];
   brand: BrandData;
@@ -86,13 +89,13 @@ export function ActionModal({ type, close, commit, people, groups, brand }: Acti
       if (method === "directory") return "Directory sync needs administrator consent and a secure backend; it cannot be simulated locally.";
       if (method === "individual") {
         const checked = checkPerson([name, email, phone, group]);
-        return "problem" in checked ? `This person ${checked.problem}` : { id: crypto.randomUUID(), ...checked.person };
+        return "problem" in checked ? `This person ${checked.problem}` : { kind: "people", source: "individual", people: [{ id: crypto.randomUUID(), ...checked.person }] };
       }
       if (!raw.trim()) return method === "csv" ? "Choose a CSV file to import." : "Add at least one comma-separated row.";
       const { people: imported, problems } = parsePeopleImport(raw);
       if (problems.length) return `Nothing was imported. ${describeProblems(problems)}`;
       if (!imported.length) return "The file has no people to import.";
-      return imported.map((person) => ({ id: crypto.randomUUID(), ...person }));
+      return { kind: "people", source: method === "csv" ? "csv" : "paste", people: imported.map((person) => ({ id: crypto.randomUUID(), ...person })) };
     }
     if (type === "group") {
       const trimmed = name.trim();

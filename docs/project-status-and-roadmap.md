@@ -24,10 +24,10 @@ Last reviewed: 9 October 2026
 | Owner organization creation | Implemented, configuration required | Completes after verified authentication and migration deployment. |
 | Organization branding persistence | Implemented, configuration required | Security-invoker RPC, private storage and signed URLs. |
 | Branding propagation to members | Implemented, configuration required | Membership-scoped reads plus RLS-protected Realtime refresh. |
-| Add one person | Prototype | Adds a preview record in browser state. |
-| Paste/CSV onboarding | Prototype | RFC 4180 parsing, header detection, email/phone validation, duplicate detection and per-row errors (unit-tested); does not yet create invitations. |
+| Add one person | Implemented, backend connected | Signed-in owners save to `organization_directory` through `import_directory_entries`; preview mode keeps browser state. |
+| Paste/CSV onboarding | Implemented, backend connected | RFC 4180 parsing, header detection, email/phone validation and per-row errors; signed-in owners save up to 500 people per import in one transaction. Invitations are not yet sent. |
 | Directory sync | Planned | Interface explains requirements but does not simulate a connection. |
-| Groups and authority assignment | Prototype plus schema | Interface state is temporary; database tables and policies exist. |
+| Groups and authority assignment | Groups saved; authority prototype | Signed-in owners save groups. Authority grants need accepted members, so they wait for invitations. |
 | Flexible announcement audience | Prototype plus server endpoint | UI and resolver are tested; server endpoint requires deployed backend and stored members/groups. |
 | In-app delivery records | Implemented, configuration required | Server publication creates recipient snapshots in Supabase. |
 | Read receipts and inbox persistence | Schema only | Tables/policies exist and receipts are bound to the reader's own delivery (behavior-tested); member UI is still backed by preview arrays. |
@@ -42,8 +42,8 @@ Last reviewed: 9 October 2026
 At the current revision:
 
 - ESLint and the TypeScript type check pass.
-- 26 unit tests pass.
-- 12 behavioral database tests pass on PGlite, and the six attack tests fail when the hardening migration is removed.
+- 32 unit tests pass.
+- 16 behavioral database tests pass on PGlite, and the six attack tests fail when the hardening migration is removed.
 - The full application build passes.
 - The GitHub Pages build passes.
 - Organization identity remains visible across mobile and desktop responsive layouts.
@@ -70,7 +70,7 @@ and performance advisors report no current issues.
 
 ### Milestone 1: verify the database
 
-- Connect the organization directory (`organization_directory`, `import_directory_entries`) to the People screen.
+- Done: the organization directory is connected to the People and Groups screens.
 - Add covering indexes for the foreign keys the performance advisor lists once real query patterns are known.
 
 - Install Docker Desktop or another supported pgTAP runner.

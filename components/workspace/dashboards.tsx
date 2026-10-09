@@ -8,7 +8,7 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import { AudienceComposer, type AnnouncementDraft } from "@/components/announcement/audience-composer";
 import { EmptyState, Header, OrgAvatar } from "@/components/workspace/chrome";
 import {
-  initials, setupProgress,
+  initials, reachablePeople, setupProgress, statusLabel,
   type Authority, type AuthorityView, type BrandData, type CreatorView, type Group, type MemberView, type Modal,
   type Person, type PublishedAnnouncement, type ThemeMode,
 } from "@/lib/workspace/model";
@@ -51,9 +51,15 @@ type CreatorDashboardProps = {
   brand: BrandData;
   announcements: PublishedAnnouncement[];
   onPublish: (draft: AnnouncementDraft) => void;
+  /** True when a signed-in owner is working on the saved organization directory. */
+  saved: boolean;
+  directoryState: "idle" | "loading" | "ready" | "error";
 };
 
-export function CreatorDashboard({ view, setView, setModal, warn, people, groups, authorities, brand, announcements, onPublish }: CreatorDashboardProps) {
+export function CreatorDashboard({ view, setView, setModal, warn, people, groups, authorities, brand, announcements, onPublish, saved, directoryState }: CreatorDashboardProps) {
+  // In a saved organization, announcements and authority need people who have accepted an invitation.
+  const reachable = reachablePeople(people, saved);
+  const recordLabel = saved ? "saved" : "preview";
   if (view === "overview") {
     const progress = setupProgress({ brand, people: people.length, groups: groups.length, authorities: authorities.length });
     const nextStep = !progress.steps.branding ? "branding" : !progress.steps.people ? "people" : !progress.steps.authority ? "authority" : undefined;
@@ -83,7 +89,7 @@ export function CreatorDashboard({ view, setView, setModal, warn, people, groups
               <AccordionContent><p>Set the two-color palette and circular logo members will see.</p><button className="secondary" onClick={() => setView("branding")}>Open branding</button></AccordionContent>
             </AccordionItem>
             <AccordionItem value="people" className={`setup-step${progress.steps.people ? " done" : ""}`}>
-              <AccordionTrigger>{stepNumber(progress.steps.people, 3)}<span><strong>Import organization members</strong><small>{people.length ? `${people.length} preview ${people.length === 1 ? "record" : "records"} added` : "No member records connected yet"}</small></span></AccordionTrigger>
+              <AccordionTrigger>{stepNumber(progress.steps.people, 3)}<span><strong>Import organization members</strong><small>{people.length ? `${people.length} ${recordLabel} ${people.length === 1 ? "record" : "records"}` : "No member records connected yet"}</small></span></AccordionTrigger>
               <AccordionContent><p>Add people individually, paste rows or upload a CSV file.</p><button className="secondary" onClick={() => setView("people")}>Open people</button></AccordionContent>
             </AccordionItem>
             <AccordionItem value="authority" className={`setup-step${progress.steps.authority ? " done" : ""}`}>
@@ -104,7 +110,7 @@ export function CreatorDashboard({ view, setView, setModal, warn, people, groups
     return (
       <>
         <Header title="Create announcement" description="Choose exactly who should receive this official update" />
-        <AudienceComposer people={people} groups={groups} allowOrganization organizationName={brand.name} onCancel={() => setView("announcements")} onPublish={onPublish} />
+        <AudienceComposer people={reachable} groups={groups} allowOrganization organizationName={brand.name} onCancel={() => setView("announcements")} onPublish={onPublish} />
       </>
     );
   }
@@ -115,7 +121,7 @@ export function CreatorDashboard({ view, setView, setModal, warn, people, groups
         <Header
           title="Announcements"
           description="Publish to the whole organization, selected groups or specific people"
-          action={<button type="button" className="primary-action" onClick={() => (people.length ? setView("compose") : warn("Import at least one member before creating an announcement."))}><Plus size={17} /> New announcement</button>}
+          action={<button type="button" className="primary-action" onClick={() => (reachable.length ? setView("compose") : warn(saved ? "Announcements reach people once they accept an invitation. Invitations are the next stage being built." : "Import at least one member before creating an announcement."))}><Plus size={17} /> New announcement</button>}
         />
         <AnnouncementRecords items={announcements} emptyTitle="No announcements published" emptyBody="Create an announcement, build its audience and review the resolved recipients before publishing." />
       </>
@@ -126,14 +132,16 @@ export function CreatorDashboard({ view, setView, setModal, warn, people, groups
     return (
       <>
         <Header title="People" description="Import and review organization members" action={<button type="button" className="primary-action" onClick={() => setModal("people")}><UserPlus size={17} /> Add people</button>} />
-        {people.length ? (
+        {saved && directoryState === "loading" && !people.length ? (
+          <EmptyState icon={Users} title="Loading the organization directory" body="Fetching the people saved for this organization." />
+        ) : people.length ? (
           <section className="data-panel member-directory">
             <div className="data-head">
-              <div><h2>Member directory</h2><p>Preview records added during this session</p></div>
+              <div><h2>Member directory</h2><p>{saved ? "Saved to your organization. People can sign in after they accept an invitation." : "Preview records added during this session"}</p></div>
               <span>{people.length} {people.length === 1 ? "person" : "people"}</span>
             </div>
             <Table>
-              <TableCaption className="sr-only">Preview organization members</TableCaption>
+              <TableCaption className="sr-only">{saved ? "Organization directory" : "Preview organization members"}</TableCaption>
               <TableHeader><TableRow><TableHead>Member</TableHead><TableHead>Contact</TableHead><TableHead>Group</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
               <TableBody>
                 {people.map((person) => (
@@ -141,7 +149,7 @@ export function CreatorDashboard({ view, setView, setModal, warn, people, groups
                     <TableCell><div className="member-name"><Avatar size="sm"><AvatarFallback>{initials(person.name)}</AvatarFallback></Avatar><strong>{person.name}</strong></div></TableCell>
                     <TableCell>{[person.email, person.phone].filter(Boolean).join(" · ")}</TableCell>
                     <TableCell>{person.group || "Unassigned"}</TableCell>
-                    <TableCell><span className="record-status"><Check size={13} /> Preview record</span></TableCell>
+                    <TableCell><span className="record-status"><Check size={13} /> {person.status ? statusLabel[person.status] : "Preview record"}</span></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -160,7 +168,7 @@ export function CreatorDashboard({ view, setView, setModal, warn, people, groups
         <Header
           title="Authorities"
           description="Assign hierarchy levels and audience scope"
-          action={<button type="button" className="primary-action" onClick={() => (people.length && groups.length ? setModal("authority") : warn("Add at least one person and one group first."))}><Plus size={17} /> Assign authority</button>}
+          action={<button type="button" className="primary-action" onClick={() => (reachable.length && groups.length ? setModal("authority") : warn(saved ? "Authority can be given to people once they accept an invitation. Invitations are the next stage being built." : "Add at least one person and one group first."))}><Plus size={17} /> Assign authority</button>}
         />
         {authorities.length ? (
           <section className="data-panel">
@@ -185,9 +193,9 @@ export function CreatorDashboard({ view, setView, setModal, warn, people, groups
         <Header title="Groups" description="Create departments, offices, courses and classes" action={<button type="button" className="primary-action" onClick={() => setModal("group")}><Plus size={17} /> Add group</button>} />
         {groups.length ? (
           <section className="data-panel">
-            <div className="data-head"><h2>Audience groups</h2><span>{groups.length} total</span></div>
+            <div className="data-head"><div><h2>Audience groups</h2>{saved && <p>Saved to your organization</p>}</div><span>{groups.length} total</span></div>
             {groups.map((group) => {
-              const members = people.filter((person) => person.group === group.name).length;
+              const members = people.filter((person) => person.group.split(", ").includes(group.name)).length;
               return (
                 <div className="authority-card" key={group.id}>
                   <Building2 size={19} />
