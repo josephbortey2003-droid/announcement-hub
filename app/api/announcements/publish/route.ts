@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/database.types";
+import { idsOutside, resolveRecipientIds } from "@/lib/announcements/recipients";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,7 @@ async function loadActiveMemberships(admin: ReturnType<typeof createAdminClient>
       .select("id")
       .eq("organization_id", organizationId)
       .eq("status", "active")
+      .order("id")
       .range(from, from + 999);
     if (error) throw new Error("Organization memberships could not be resolved.");
     rows.push(...(data ?? []));
@@ -86,28 +88,34 @@ export async function POST(request: Request) {
   let announcementId: string | null = null;
 
   try {
-    const { data: existing } = await admin
-      .from("announcements")
-      .select("id, status")
-      .eq("organization_id", input.organizationId)
-      .eq("client_reference", input.clientRequestId)
-      .maybeSingle();
-    if (existing) {
-      return NextResponse.json({ announcementId: existing.id, status: existing.status, duplicate: true });
-    }
-
-    const { data: actor } = await admin
+    const { data: actor, error: actorError } = await admin
       .from("memberships")
       .select("id, role")
       .eq("organization_id", input.organizationId)
       .eq("user_id", authData.user.id)
       .eq("status", "active")
       .maybeSingle();
+    if (actorError) throw new Error("Publishing membership could not be checked.");
     if (!actor || !["owner", "authority"].includes(actor.role)) {
       return NextResponse.json({ error: "You do not have publishing authority in this organization." }, { status: 403 });
     }
     if (actor.role === "authority" && input.audience.wholeOrganization) {
       return NextResponse.json({ error: "Only the organization owner can publish organization-wide." }, { status: 403 });
+    }
+
+    // Idempotency lookup runs after authorization so that a retry can only reveal
+    // announcements to someone who is allowed to publish in this organization.
+    const { data: existing } = await admin
+      .from("announcements")
+      .select("id, status, author_membership_id")
+      .eq("organization_id", input.organizationId)
+      .eq("client_reference", input.clientRequestId)
+      .maybeSingle();
+    if (existing && (actor.role === "owner" || existing.author_membership_id === actor.id)) {
+      return NextResponse.json({ announcementId: existing.id, status: existing.status, duplicate: true });
+    }
+    if (existing) {
+      return NextResponse.json({ error: "This request reference is already in use." }, { status: 409 });
     }
 
     const uniqueGroupIds = [...new Set(input.audience.groupIds)];
@@ -137,7 +145,7 @@ export async function POST(request: Request) {
         .or(`expires_at.is.null,expires_at.gt.${now}`);
       if (error) throw new Error("Publishing grants could not be checked.");
       grantedGroupIds = new Set((grants ?? []).map((grant) => grant.group_id));
-      if (uniqueGroupIds.some((id) => !grantedGroupIds.has(id))) {
+      if (idsOutside(uniqueGroupIds, grantedGroupIds).length) {
         return NextResponse.json({ error: "The announcement includes a group outside your authority." }, { status: 403 });
       }
       if (uniqueMemberIds.length) {
@@ -150,8 +158,7 @@ export async function POST(request: Request) {
           .in("membership_id", uniqueMemberIds)
           .in("group_id", [...grantedGroupIds]);
         if (scopeError) throw new Error("Individual recipient scope could not be checked.");
-        const scopedMembers = new Set((scopedRows ?? []).map((row) => row.membership_id));
-        if (uniqueMemberIds.some((id) => !scopedMembers.has(id))) {
+        if (idsOutside(uniqueMemberIds, (scopedRows ?? []).map((row) => row.membership_id)).length) {
           return NextResponse.json({ error: "A selected person is outside your assigned audience." }, { status: 403 });
         }
       }
@@ -159,13 +166,11 @@ export async function POST(request: Request) {
 
     const activeMemberships = await loadActiveMemberships(admin, input.organizationId);
     const activeIds = new Set(activeMemberships.map((membership) => membership.id));
-    if ([...uniqueMemberIds, ...uniqueExcludedIds].some((id) => !activeIds.has(id))) {
+    if (idsOutside([...uniqueMemberIds, ...uniqueExcludedIds], activeIds).length) {
       return NextResponse.json({ error: "A selected or excluded person is not an active organization member." }, { status: 422 });
     }
 
-    const recipientIds = new Set<string>();
-    if (input.audience.wholeOrganization) activeIds.forEach((id) => recipientIds.add(id));
-    uniqueMemberIds.forEach((id) => recipientIds.add(id));
+    const groupMembershipIds: string[] = [];
     if (uniqueGroupIds.length) {
       for (let from = 0; ; from += 1_000) {
         const { data: groupMembers, error } = await admin
@@ -173,15 +178,21 @@ export async function POST(request: Request) {
           .select("membership_id")
           .eq("organization_id", input.organizationId)
           .in("group_id", uniqueGroupIds)
+          .order("group_id")
+          .order("membership_id")
           .range(from, from + 999);
         if (error) throw new Error("Group recipients could not be resolved.");
-        (groupMembers ?? []).forEach((row) => {
-          if (activeIds.has(row.membership_id)) recipientIds.add(row.membership_id);
-        });
+        (groupMembers ?? []).forEach((row) => groupMembershipIds.push(row.membership_id));
         if (!groupMembers || groupMembers.length < 1_000) break;
       }
     }
-    uniqueExcludedIds.forEach((id) => recipientIds.delete(id));
+    const recipientIds = resolveRecipientIds({
+      wholeOrganization: input.audience.wholeOrganization,
+      activeMembershipIds: activeIds,
+      individualMembershipIds: uniqueMemberIds,
+      groupMembershipIds,
+      excludedMembershipIds: uniqueExcludedIds,
+    });
     if (!recipientIds.size) {
       return NextResponse.json({ error: "The audience resolves to no active recipients." }, { status: 422 });
     }
@@ -248,7 +259,7 @@ export async function POST(request: Request) {
       .eq("status", "draft");
     if (publishError) throw new Error("The announcement could not be published.");
 
-    await admin.from("audit_events").insert({
+    const { error: auditError } = await admin.from("audit_events").insert({
       organization_id: input.organizationId,
       actor_user_id: authData.user.id,
       action: "announcement.published",
@@ -262,6 +273,8 @@ export async function POST(request: Request) {
         recipient_count: recipientIds.size,
       },
     });
+    // The announcement is already published, so a missing audit row is logged rather than undone.
+    if (auditError) console.error("Announcement audit write failed", auditError.code);
 
     return NextResponse.json({
       announcementId: announcement.id,
