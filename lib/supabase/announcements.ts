@@ -119,3 +119,25 @@ export async function loadPublishingGroups(client: SupabaseClient, organizationI
   }
   return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
+
+export type EmailOutcome = { configured: boolean; sent: number; failed: number };
+
+/**
+ * Asks the notify-announcement Edge Function to email the recipients
+ * (supabase/functions/notify-announcement). Large audiences are sent over
+ * several calls. Returns null when the function is unavailable, for example
+ * before it has been deployed; publishing has already succeeded either way.
+ */
+export async function notifyAnnouncementByEmail(client: SupabaseClient, organizationId: string, announcementId: string, maxCalls = 20): Promise<EmailOutcome | null> {
+  const total: EmailOutcome = { configured: false, sent: 0, failed: 0 };
+  for (let call = 0; call < maxCalls; call += 1) {
+    const { data, error } = await client.functions.invoke("notify-announcement", { body: { organizationId, announcementId } });
+    if (error || !data) return call === 0 ? null : total;
+    const result = data as EmailOutcome & { remaining: boolean };
+    total.configured = result.configured;
+    total.sent += result.sent;
+    total.failed += result.failed;
+    if (!result.configured || !result.remaining) break;
+  }
+  return total;
+}

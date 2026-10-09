@@ -59,6 +59,7 @@ The GitHub Pages preview contains only the browser interface. Server API routes,
 | `lib/sms/` | Hubtel adapter, phone normalization, segments, SMS authorization |
 | `app/api/` | Server routes: publishing and SMS |
 | `supabase/migrations/` | Schema, RLS policies and grants |
+| `supabase/functions/` | Edge Functions (Deno): `notify-announcement` emails announcements |
 | `tests/`, `tests/db/` | Unit tests and behavioral database tests |
 
 ### Browser-safe code

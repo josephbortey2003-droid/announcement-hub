@@ -13,6 +13,7 @@ This directory is the project record for Announcement Hub. It distinguishes impl
 - [Changelog](../CHANGELOG.md): every change, with where it lives in the code.
 - [Backend setup](backend-setup.md): local and hosted Supabase configuration.
 - [Hubtel SMS setup](hubtel-sms-setup.md): controlled activation and verification of SMS delivery.
+- [Email setup](email-setup.md): switching on announcement emails and reliable account emails.
 - [Design system](../design-system/announcement-hub/MASTER.md): original design reference. The current application CSS is authoritative where later user decisions superseded this early reference.
 
 ## Canonical project description
