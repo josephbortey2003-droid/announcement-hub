@@ -2,6 +2,73 @@
 
 Every change is listed with **where in the code** it lives, so a reviewer can go straight to the implementation.
 
+## 9 October 2026: member invitations
+
+Branch: `feature/invitations`
+
+Owners can now invite people from the directory, and invitees join by opening a personal link. Accepting turns a person from "Not yet invited" into an **active member**, which is what announcements and authority need.
+
+### How it works
+
+1. **Owner creates links.** On **People**, *Invite people* opens a dialog listing everyone not yet joined (new people are pre-selected). *Create links* calls `create_member_invitations`, which:
+   - makes a random 64-character secret for each person (two `gen_random_uuid()` values, about 244 random bits);
+   - stores only its **SHA-256 hash**, so the database never holds a usable link;
+   - sets the link to expire after 7 days;
+   - marks the person *Invited*.
+
+   Inviting someone again replaces their link, so the old one stops working.
+   - **Where in the code:** `supabase/migrations/20261009072100_member_invitations.sql`; `components/workspace/invite-dialog.tsx`; `lib/supabase/invitations.ts`: `createInvitations`.
+2. **Owner shares links.** Each link is shown once, with **Copy link**, **WhatsApp** (opens a chat with the person's number when it is known) and **Email** (opens the owner's mail app). No email or SMS provider is needed.
+   - **Where in the code:** `lib/supabase/invitations.ts`: `invitationLink`, `invitationMessage`, `whatsappLink`, `emailLink`.
+3. **Invitee opens the link.** The secret travels in the URL **fragment** (`#invite=…`). Browsers never send the fragment to a server, so it stays out of hosting logs, and the page removes it from the address bar immediately. The sign-in page shows "Join *Organization*", who the link is for and when it expires. Used, expired and unknown links get a plain explanation.
+   - **Where in the code:** `components/auth/welcome.tsx` (invitation effect and banner); `lib/supabase/invitations.ts`: `tokenFromHash`, `previewInvitation`.
+4. **Invitee signs in or creates an account**, using a password, a one-time email link or Google. The link is remembered in browser storage for up to 7 days, so acceptance still happens after confirming an email or returning from Google.
+   - **Where in the code:** `components/auth/welcome.tsx`; `app/page.tsx` (session restore); `lib/supabase/invitations.ts`: `savePendingInvitation`, `readPendingInvitation`.
+5. **Acceptance** (`accept_member_invitation`) runs as one transaction. It:
+   - checks the link is unused and unexpired;
+   - if the invitation has an email address, requires the account to have that same, **confirmed** email, so a forwarded link is useless;
+   - creates or reactivates the membership and links the directory entry;
+   - adds the person to their groups and creates their profile;
+   - marks the link used and records an audit event.
+   - **Where in the code:** `supabase/migrations/20261009072100_member_invitations.sql`; `lib/supabase/browser-auth.ts`: `joinWithInvitation`.
+
+### Security decisions
+
+- **Phone-only invitations are bearer links.** Phone sign-in needs an SMS provider for Supabase Auth, which is not configured, so a phone-only invitee signs in with any account. Such a link must be treated like a password. It still works once and expires in 7 days, and the owner sees the person become *Active member*.
+- **Elevated functions are not in the public API.** `preview_invitation` and `accept_member_invitation` need elevated rights. They live in the `private` schema and are reached through thin `SECURITY INVOKER` wrappers, as Supabase recommends. Signed-out visitors can run only the preview. The security advisor reports no issues.
+  - **Where in the code:** `supabase/migrations/20261009072158_private_invitation_functions.sql`.
+- **Invitations are for members only** (database check). Authority is granted separately.
+
+### Shared dialog behaviour
+
+Focus trapping, Escape-to-close and focus return now live in one hook used by both dialogs.
+- **Where in the code:** `components/workspace/use-dialog-focus.ts`.
+
+### Tests
+
+- **10 new database tests** (26 in total) in `tests/db/rls.test.mjs`:
+  - only owners can invite, and only a hash is stored;
+  - previews work for valid links and show nothing for wrong ones;
+  - re-inviting cancels the old link;
+  - another account or an unconfirmed email cannot accept;
+  - accepting creates the membership, groups and profile, and works only once;
+  - active members cannot be re-invited;
+  - expired links and people from other organizations are refused;
+  - signed-out visitors can run only the preview, and no elevated function is exposed in `public`.
+- **6 new unit tests** in `tests/invitations-client.test.mjs`: link building (secret in the fragment), share links, pending-link storage and its 7-day expiry, RPC payloads, and error messages. 38 unit tests in total.
+- **Browser check against the hosted database:** opening an unknown invitation link removed the secret from the address bar, asked the database, cleared the stored link and showed the "not valid" message.
+
+### Hosted database
+
+Both migrations are applied to the hosted development project (`20261009072100`, `20261009072158`), and the repository files carry the same versions. The security advisor reports no issues.
+
+### Not verified
+
+The full invite → sign up → join flow with real accounts was not run, because it requires creating accounts on the hosted project. To test it:
+1. As the owner, add a person with an email you control and click *Invite people*.
+2. Open the copied link in a private window and create an account with that email.
+3. Confirm the email. You should land in the member inbox, and the owner's People page should show *Active member*.
+
 ## 9 October 2026: organization directory saved to the database
 
 Branch: `feature/persist-organization-directory`

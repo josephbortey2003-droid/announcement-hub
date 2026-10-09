@@ -1,6 +1,7 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { isValidOrganizationCode, normalizeOrganizationCode } from "@/lib/organizations/code";
 import { createClient } from "./client";
+import { acceptInvitation, clearPendingInvitation } from "./invitations";
 import { getPublicSupabaseConfig } from "./config";
 
 export type PortalRole = "creator" | "authority" | "member";
@@ -208,6 +209,15 @@ export function subscribeToOrganizationIdentity(client: SupabaseClient, organiza
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "organization_branding", filter: `organization_id=eq.${organizationId}` }, refresh)
     .subscribe();
   return () => { void client.removeChannel(channel); };
+}
+
+/** Accepts an invitation for the signed-in account and returns the joined organization's access. */
+export async function joinWithInvitation(client: SupabaseClient, token: string): Promise<OrganizationAccess> {
+  const organizationId = await acceptInvitation(client, token);
+  clearPendingInvitation();
+  const access = await loadOrganizationAccessById(client, organizationId);
+  if (!access) throw new Error("You joined the organization, but it could not be opened. Refresh the page.");
+  return access;
 }
 
 export async function completePendingOrganization(user: User, client = getBrowserClient()) {

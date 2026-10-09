@@ -1048,6 +1048,27 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_member_invitation: {
+        Args: {
+          invite_token: string
+        }
+        Returns: string
+      }
+      create_member_invitations: {
+        Args: {
+          entry_ids: string[]
+          target_organization: string
+          valid_days?: number
+        }
+        Returns: {
+          directory_entry_id: string
+          email: string | null
+          expires_at: string
+          full_name: string
+          phone_e164: string | null
+          token: string
+        }[]
+      }
       import_directory_entries: {
         Args: {
           entries: Json
@@ -1055,6 +1076,19 @@ export type Database = {
           target_organization: string
         }
         Returns: Json
+      }
+      preview_invitation: {
+        Args: {
+          invite_token: string
+        }
+        Returns: {
+          email_required: boolean
+          expires_at: string
+          invitee_name: string
+          organization_code: string
+          organization_name: string
+          status: string
+        }[]
       }
       update_organization_identity: {
         Args: {

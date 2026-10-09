@@ -20,6 +20,7 @@ export default function Home() {
   const [viewer, setViewer] = useState<Viewer>(previewViewer);
   const [brand, setBrand] = useState<BrandData>(demoBrand);
   const [theme, setThemeState] = useState<ThemeMode>("system");
+  const [startupError, setStartupError] = useState("");
   // Preview data lives in memory only; it is cleared on refresh and never sent to a server.
   const [people, setPeople] = useState<Person[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -40,10 +41,33 @@ export default function Home() {
     let active = true;
     const restore = async () => {
       try {
-        const { completePendingOrganization, getBrowserClient, loadOrganizationAccess, takeRequestedOrganizationCode } = await import("@/lib/supabase/browser-auth");
+        const { completePendingOrganization, getBrowserClient, joinWithInvitation, loadOrganizationAccess, takeRequestedOrganizationCode } = await import("@/lib/supabase/browser-auth");
+        const { clearPendingInvitation, readPendingInvitation, savePendingInvitation, tokenFromHash } = await import("@/lib/supabase/invitations");
+        // Remember a link opened by someone who is already signed in, before anything else runs.
+        const tokenInLink = tokenFromHash(window.location.hash);
+        if (tokenInLink) savePendingInvitation(tokenInLink);
         const client = getBrowserClient();
         const { data } = await client.auth.getUser();
         if (!data.user || !active) return;
+
+        // Returning from email confirmation or Google with an invitation link still pending.
+        const invitationToken = readPendingInvitation();
+        if (invitationToken) {
+          try {
+            const joined = await joinWithInvitation(client, invitationToken);
+            if (!active) return;
+            setBrand(brandFromAccess(joined));
+            setViewer(viewerFromAccess(joined));
+            setPortal(joined.portal);
+            return;
+          } catch (error) {
+            clearPendingInvitation();
+            await client.auth.signOut();
+            if (active) setStartupError(error instanceof Error ? error.message : "The invitation could not be accepted.");
+            return;
+          }
+        }
+
         const created = await completePendingOrganization(data.user, client);
         const access = created ?? await loadOrganizationAccess(client, takeRequestedOrganizationCode());
         if (!access || !active) return;
@@ -81,7 +105,7 @@ export default function Home() {
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
   };
 
-  if (!portal) return <Welcome onEnter={enterPortal} theme={theme} setTheme={setTheme} />;
+  if (!portal) return <Welcome key={startupError} onEnter={enterPortal} theme={theme} setTheme={setTheme} startupError={startupError} />;
   return (
     <Workspace
       portal={portal}

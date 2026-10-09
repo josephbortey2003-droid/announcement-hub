@@ -23,7 +23,7 @@ const SUPABASE_SHIM = `
   create role service_role nologin bypassrls;
 
   create schema auth;
-  create table auth.users (id uuid primary key, email text);
+  create table auth.users (id uuid primary key, email text, email_confirmed_at timestamptz, phone text);
   create function auth.uid() returns uuid language sql stable as
     $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
   grant usage on schema auth to anon, authenticated;
@@ -41,7 +41,7 @@ const SUPABASE_SHIM = `
 
 // Fixed ids keep the fixtures readable in failure messages.
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const USERS = { ownerA: id(1), ownerB: id(2), authorityA: id(3), memberA: id(4) };
+const USERS = { ownerA: id(1), ownerB: id(2), authorityA: id(3), memberA: id(4), ama: id(5), stranger: id(6), unconfirmed: id(7) };
 const ORG_A = id(101);
 const ORG_B = id(102);
 const MEMBERSHIP = { authorityA: id(203), memberA: id(204) };
@@ -53,7 +53,7 @@ let db;
 
 async function asUser(userId, sql, params = []) {
   return db.transaction(async (tx) => {
-    await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [userId]);
+    await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [userId ?? ""]);
     await tx.exec("set local role authenticated");
     return tx.query(sql, params);
   });
@@ -81,9 +81,11 @@ before(async () => {
 
   // Fixtures are created as the database owner, exactly as the service role would.
   await db.exec(`
-    insert into auth.users (id, email) values
-      ('${USERS.ownerA}', 'owner-a@example.test'), ('${USERS.ownerB}', 'owner-b@example.test'),
-      ('${USERS.authorityA}', 'leader-a@example.test'), ('${USERS.memberA}', 'member-a@example.test');
+    insert into auth.users (id, email, email_confirmed_at) values
+      ('${USERS.ownerA}', 'owner-a@example.test', now()), ('${USERS.ownerB}', 'owner-b@example.test', now()),
+      ('${USERS.authorityA}', 'leader-a@example.test', now()), ('${USERS.memberA}', 'member-a@example.test', now()),
+      ('${USERS.ama}', 'Ama@Example.test', now()), ('${USERS.stranger}', 'stranger@example.test', now()),
+      ('${USERS.unconfirmed}', 'kojo@example.test', null);
     insert into public.organizations (id, name, code, created_by) values
       ('${ORG_A}', 'Org A', 'ORG-A', '${USERS.ownerA}'),
       ('${ORG_B}', 'Org B', 'ORG-B', '${USERS.ownerB}');
@@ -268,4 +270,120 @@ test("only the organization's owner can import or read its directory", async () 
 test("imports are limited to 500 people per call", async () => {
   const entries = Array.from({ length: 501 }, (_, i) => ({ fullName: `Person ${i}`, email: `p${i}@example.test` }));
   await rejectsWithCode(importAs(USERS.ownerA, ORG_A, entries), "22023", "oversized imports must be refused");
+});
+
+// Member invitations (supabase/migrations/*_member_invitations.sql)
+
+const directoryId = async (email) =>
+  (await db.query("select id from public.organization_directory where email = $1", [email])).rows[0].id;
+const invite = (userId, entryIds, days = 7) =>
+  asUser(userId, "select * from public.create_member_invitations($1, $2::uuid[], $3)", [ORG_A, entryIds, days]);
+const accept = (userId, token) => asUser(userId, "select public.accept_member_invitation($1) as organization_id", [token]);
+const preview = (token) => db.transaction(async (tx) => {
+  await tx.exec("set local role anon");
+  return tx.query("select * from public.preview_invitation($1)", [token]);
+});
+
+test("only the owner can create invitations, and only a hash of the token is stored", async () => {
+  const ama = await directoryId("ama@example.test");
+  await rejectsWithCode(invite(USERS.memberA, [ama]), "42501", "members cannot invite");
+  await rejectsWithCode(invite(USERS.ownerB, [ama]), "42501", "other owners cannot invite");
+  const { rows } = await invite(USERS.ownerA, [ama]);
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].token, /^[0-9a-f]{64}$/);
+  const stored = await db.query("select token_hash from public.invitations where directory_entry_id = $1", [ama]);
+  assert.notEqual(stored.rows[0].token_hash, rows[0].token);
+  const status = await db.query("select onboarding_status from public.organization_directory where id = $1", [ama]);
+  assert.equal(status.rows[0].onboarding_status, "invited");
+});
+
+test("anyone holding a link can preview it, but a wrong token shows nothing", async () => {
+  const ama = await directoryId("ama@example.test");
+  const { rows } = await invite(USERS.ownerA, [ama]);
+  const shown = await preview(rows[0].token);
+  assert.equal(shown.rows[0].organization_code, "ORG-A");
+  assert.equal(shown.rows[0].invitee_name, "Ama Mensah");
+  assert.equal(shown.rows[0].status, "valid");
+  assert.equal(shown.rows[0].email_required, true);
+  assert.equal((await preview("0".repeat(64))).rows.length, 0);
+});
+
+test("re-inviting replaces the link, so the old one stops working", async () => {
+  const ama = await directoryId("ama@example.test");
+  const first = (await invite(USERS.ownerA, [ama])).rows[0].token;
+  const second = (await invite(USERS.ownerA, [ama])).rows[0].token;
+  assert.notEqual(first, second);
+  assert.equal((await preview(first)).rows.length, 0);
+  await rejectsWithCode(accept(USERS.ama, first), "P0002", "a replaced link must not work");
+});
+
+test("an invitation with an email can only be accepted by that confirmed email", async () => {
+  const ama = await directoryId("ama@example.test");
+  const { token } = (await invite(USERS.ownerA, [ama])).rows[0];
+  await rejectsWithCode(accept(USERS.stranger, token), "42501", "a different account must be refused");
+  await rejectsWithCode(accept(null, token), "42501", "signing in is required");
+});
+
+test("an unconfirmed email cannot accept", async () => {
+  const kojo = await directoryId("kojo@example.test");
+  const { token } = (await invite(USERS.ownerA, [kojo])).rows[0];
+  await rejectsWithCode(accept(USERS.unconfirmed, token), "42501", "the email must be confirmed");
+});
+
+test("accepting creates an active membership with the person's groups, once", async () => {
+  const ama = await directoryId("ama@example.test");
+  const { token } = (await invite(USERS.ownerA, [ama])).rows[0];
+  const { rows } = await accept(USERS.ama, token);
+  assert.equal(rows[0].organization_id, ORG_A);
+
+  const membership = await db.query("select id, role, status from public.memberships where organization_id = $1 and user_id = $2", [ORG_A, USERS.ama]);
+  assert.deepEqual({ role: membership.rows[0].role, status: membership.rows[0].status }, { role: "member", status: "active" });
+  const entry = await db.query("select membership_id, onboarding_status from public.organization_directory where id = $1", [ama]);
+  assert.deepEqual(entry.rows[0], { membership_id: membership.rows[0].id, onboarding_status: "active" });
+  const groups = await db.query(
+    "select g.name from public.group_members gm join public.groups g on g.id = gm.group_id where gm.membership_id = $1",
+    [membership.rows[0].id]
+  );
+  assert.deepEqual(groups.rows.map((row) => row.name), ["Science"]);
+  const profile = await db.query("select full_name from public.profiles where id = $1", [USERS.ama]);
+  assert.equal(profile.rows[0].full_name, "Ama Mensah");
+
+  await rejectsWithCode(accept(USERS.ama, token), "P0002", "a used link must not work again");
+  assert.equal((await preview(token)).rows[0].status, "used");
+  // The new member now sees their organization.
+  const visible = await asUser(USERS.ama, "select code from public.organizations");
+  assert.deepEqual(visible.rows, [{ code: "ORG-A" }]);
+});
+
+test("active members cannot be invited again", async () => {
+  const ama = await directoryId("ama@example.test");
+  await rejectsWithCode(invite(USERS.ownerA, [ama]), "22023", "active members must be refused");
+});
+
+test("expired invitations are refused", async () => {
+  const kojo = await directoryId("kojo@example.test");
+  const { token } = (await invite(USERS.ownerA, [kojo], 1)).rows[0];
+  await db.query("update public.invitations set expires_at = now() - interval '1 minute' where token_hash = encode(sha256(convert_to($1, 'UTF8')), 'hex')", [token]);
+  assert.equal((await preview(token)).rows[0].status, "expired");
+  await db.query("update auth.users set email_confirmed_at = now() where id = $1", [USERS.unconfirmed]);
+  await rejectsWithCode(accept(USERS.unconfirmed, token), "P0002", "expired links must not work");
+});
+
+test("people from another organization cannot be invited", async () => {
+  await rejectsWithCode(invite(USERS.ownerA, [id(999)]), "22023", "unknown directory entries must be refused");
+});
+
+test("signed-out visitors can run only the invitation preview, and elevated functions stay private", async () => {
+  const anonymous = await db.query(`
+    select n.nspname || '.' || p.proname as name from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'private') and has_function_privilege('anon', p.oid, 'EXECUTE')
+      -- Extension functions (pgcrypto) live in the "extensions" schema on Supabase, not in public.
+      and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
+    order by 1`);
+  assert.deepEqual(anonymous.rows.map((row) => row.name), ["private.preview_invitation", "public.preview_invitation"]);
+  const exposedDefiners = await db.query(`
+    select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.prosecdef
+      and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`);
+  assert.deepEqual(exposedDefiners.rows, []);
 });

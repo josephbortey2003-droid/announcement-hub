@@ -21,6 +21,7 @@ Last reviewed: 9 October 2026
 | Password and email OTP sign-in | Implemented, backend connected | Hosted Supabase and exact callback URLs are configured; production SMTP and end-to-end account tests remain. |
 | Google sign-in | Implemented, configuration required | The application and PKCE callback are ready; Google client credentials have not been created or stored. |
 | CAPTCHA protection | Implemented, configuration required | Turnstile renders only when a site key is set and forwards single-use tokens to Supabase Auth; provider keys and Supabase enforcement remain. |
+| Member invitations | Implemented, backend connected | One-time, 7-day links (hash stored), shared by copy, WhatsApp or email; acceptance creates the membership and groups in one transaction; email-bound when the person has an email. Behavior-tested; the full flow with real accounts is not yet exercised. |
 | Owner organization creation | Implemented, configuration required | Completes after verified authentication and migration deployment. |
 | Organization branding persistence | Implemented, configuration required | Security-invoker RPC, private storage and signed URLs. |
 | Branding propagation to members | Implemented, configuration required | Membership-scoped reads plus RLS-protected Realtime refresh. |
@@ -42,8 +43,8 @@ Last reviewed: 9 October 2026
 At the current revision:
 
 - ESLint and the TypeScript type check pass.
-- 32 unit tests pass.
-- 16 behavioral database tests pass on PGlite, and the six attack tests fail when the hardening migration is removed.
+- 38 unit tests pass.
+- 26 behavioral database tests pass on PGlite, and the six attack tests fail when the hardening migration is removed.
 - The full application build passes.
 - The GitHub Pages build passes.
 - Organization identity remains visible across mobile and desktop responsive layouts.
@@ -86,6 +87,8 @@ and performance advisors report no current issues.
 - Test owner creation, duplicate codes, password recovery and each role on two devices.
 
 ### Milestone 3: persist organization operations
+
+- Done: invitation creation, expiry, acceptance and resend (re-inviting replaces the link).
 
 - Replace preview people, group and authority arrays with authenticated queries.
 - Implement invitation creation, expiry, acceptance and resend controls.

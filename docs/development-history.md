@@ -128,6 +128,17 @@ Decision: database rules are tested by *behavior* (acting as real users) in addi
 
 Signed-in owners' People and Groups screens now save to Supabase through `lib/supabase/directory.ts`, using the `import_directory_entries` function from the 25 September directory migrations. These migrations had been applied to the hosted database without being committed; the earlier wiring for them was left uncommitted in a separate working copy and was written against the old single-file interface, so it was rebuilt for the component structure. Decision: announcements and authority stay limited to people with an accepted membership, so the interface never offers recipients who cannot receive anything. See [CHANGELOG.md](../CHANGELOG.md).
 
+### Member invitations (9 October 2026)
+
+Owners create one-time invitation links from the directory and share them by copy, WhatsApp or email. Invitees join by signing in or creating an account. Decisions:
+- only a SHA-256 hash of each link is stored;
+- the secret travels in the URL fragment so it never reaches server logs;
+- email invitations are bound to the confirmed account email;
+- phone-only invitations are bearer links until SMS sign-in exists;
+- the elevated database functions sit in the `private` schema behind invoker wrappers.
+
+Delivery deliberately uses the owner's own WhatsApp or email instead of a paid provider. See [CHANGELOG.md](../CHANGELOG.md).
+
 ## Design references and skills consulted
 
 The project used the supplied UI/UX, frontend, mobile, animation, accessibility, color, typography and 21st.dev references as design guidance. Later direct product decisions override early generated design-system suggestions. External reference material was treated as inspiration, not copied customer evidence or factual product claims.

@@ -7,6 +7,7 @@ import { ArrowRight, Building2, Check, CircleAlert, Eye, EyeOff, GraduationCap, 
 import { Brand, ThemeSelect } from "@/components/workspace/chrome";
 import { normalizeOrganizationCode } from "@/lib/organizations/code";
 import type { OrganizationAccess } from "@/lib/supabase/browser-auth";
+import type { InvitationPreview } from "@/lib/supabase/invitations";
 import { getPublicSupabaseConfig } from "@/lib/supabase/config";
 import { brandFromAccess, viewerFromAccess } from "@/lib/workspace/access";
 import { parseSignInIdentifier, type BrandData, type Portal, type ThemeMode, type Viewer } from "@/lib/workspace/model";
@@ -29,9 +30,13 @@ type WelcomeProps = {
   onEnter: (portal: Portal, brand?: BrandData, viewer?: Viewer) => void;
   theme: ThemeMode;
   setTheme: (theme: ThemeMode) => void;
+  /** An error from restoring a session, for example an invitation that could not be accepted. */
+  startupError?: string;
 };
 
-export function Welcome({ onEnter, theme, setTheme }: WelcomeProps) {
+type PendingInvite = { token: string; preview: InvitationPreview };
+
+export function Welcome({ onEnter, theme, setTheme, startupError = "" }: WelcomeProps) {
   const [role, setRole] = useState<Portal>("creator");
   const [method, setMethod] = useState<"password" | "code">("password");
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
@@ -41,12 +46,13 @@ export function Welcome({ onEnter, theme, setTheme }: WelcomeProps) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [organizationName, setOrganizationName] = useState("");
-  const [formError, setFormError] = useState("");
+  const [formError, setFormError] = useState(startupError);
   const [formNotice, setFormNotice] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
+  const [invite, setInvite] = useState<PendingInvite | null>(null);
   const captchaRef = useRef<TurnstileInstance>(undefined);
 
   const current = roleInfo[role];
@@ -65,6 +71,40 @@ export function Welcome({ onEnter, theme, setTheme }: WelcomeProps) {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  // An invitation link (#invite=...) is remembered across sign-in and email confirmation, then previewed.
+  useEffect(() => {
+    if (!backendReady) return;
+    let active = true;
+    void (async () => {
+      const invitations = await import("@/lib/supabase/invitations");
+      const fromLink = invitations.tokenFromHash(window.location.hash);
+      if (fromLink) {
+        invitations.savePendingInvitation(fromLink);
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+      }
+      const token = fromLink ?? invitations.readPendingInvitation();
+      if (!token) return;
+      try {
+        const { getBrowserClient } = await import("@/lib/supabase/browser-auth");
+        const preview = await invitations.previewInvitation(getBrowserClient(), token);
+        if (!active) return;
+        if (!preview || preview.status !== "valid") {
+          invitations.clearPendingInvitation();
+          setFormError(preview?.status === "expired"
+            ? "This invitation has expired. Ask the organization owner for a new link."
+            : "This invitation link is not valid or has already been used. Ask the organization owner for a new link.");
+          return;
+        }
+        setInvite({ token, preview });
+        setRole("member");
+        setAuthMode("signin");
+      } catch {
+        if (active) setFormError("The invitation could not be checked. Check your connection and reload the page.");
+      }
+    })();
+    return () => { active = false; };
+  }, [backendReady]);
 
   const clearMessages = () => { setFormError(""); setFormNotice(""); };
   const resetCaptcha = () => { setCaptchaToken(""); captchaRef.current?.reset(); };
@@ -104,11 +144,11 @@ export function Welcome({ onEnter, theme, setTheme }: WelcomeProps) {
     clearMessages();
     if (!backendReady) return unavailable(authMode === "signup" ? "Account creation" : method === "password" ? "Password sign-in" : "One-time-code sign-in");
     if (recoveryMode) return updateRecoveredPassword();
-    if (authMode === "signup" && !validateOwnerSetup()) return;
+    if (authMode === "signup" && !invite && !validateOwnerSetup()) return;
 
     const contact = parseSignInIdentifier(identifier);
-    if (authMode === "signup" && !(contact && "email" in contact)) return setFormError("Use a valid email address to create the owner account.");
-    if (authMode === "signin" && role !== "creator" && !organizationCode.trim()) return setFormError("Enter the organization code supplied by your administrator.");
+    if (authMode === "signup" && !(contact && "email" in contact)) return setFormError(invite ? "Use a valid email address to create your account." : "Use a valid email address to create the owner account.");
+    if (authMode === "signin" && role !== "creator" && !invite && !organizationCode.trim()) return setFormError("Enter the organization code supplied by your administrator.");
     if (!contact) return setFormError("Enter a valid email address, or a phone number such as 024 123 4567.");
     if (method === "password" && password.length < (authMode === "signup" ? MIN_PASSWORD_LENGTH : 1)) {
       return setFormError(authMode === "signup" ? `Create a password with at least ${MIN_PASSWORD_LENGTH} characters.` : "Enter your password, or choose a one-time code.");
@@ -117,9 +157,17 @@ export function Welcome({ onEnter, theme, setTheme }: WelcomeProps) {
 
     setAuthBusy(true);
     try {
-      const { completePendingOrganization, getBrowserClient, loadOrganizationAccess, savePendingOrganization, saveRequestedOrganizationCode } = await import("@/lib/supabase/browser-auth");
+      const { completePendingOrganization, getBrowserClient, joinWithInvitation, loadOrganizationAccess, savePendingOrganization, saveRequestedOrganizationCode } = await import("@/lib/supabase/browser-auth");
       const client = getBrowserClient();
       const captcha = captchaToken || undefined;
+
+      if (invite && authMode === "signup" && "email" in contact) {
+        const { data, error } = await client.auth.signUp({ email: contact.email, password, options: { data: { full_name: invite.preview.inviteeName }, emailRedirectTo: callbackUrl(), captchaToken: captcha } });
+        if (error) throw error;
+        if (data.session) return enterAccess(await joinWithInvitation(client, invite.token));
+        setFormNotice(`Check your email to confirm your account. You will join ${invite.preview.organizationName} as soon as you open the confirmation link.`);
+        return;
+      }
 
       if (authMode === "signup" && "email" in contact) {
         savePendingOrganization({ fullName: fullName.trim(), name: organizationName.trim(), code: organizationCode });
@@ -134,10 +182,12 @@ export function Welcome({ onEnter, theme, setTheme }: WelcomeProps) {
       }
 
       if (method === "code") {
-        if (role !== "creator") saveRequestedOrganizationCode(organizationCode);
+        if (role !== "creator" && !invite) saveRequestedOrganizationCode(organizationCode);
+        // An invitee may not have an account yet, so a one-time code may create one.
+        const shouldCreateUser = Boolean(invite);
         const { error } = "phone" in contact
-          ? await client.auth.signInWithOtp({ phone: contact.phone, options: { shouldCreateUser: false, captchaToken: captcha } })
-          : await client.auth.signInWithOtp({ email: contact.email, options: { shouldCreateUser: false, emailRedirectTo: callbackUrl(), captchaToken: captcha } });
+          ? await client.auth.signInWithOtp({ phone: contact.phone, options: { shouldCreateUser, captchaToken: captcha } })
+          : await client.auth.signInWithOtp({ email: contact.email, options: { shouldCreateUser, emailRedirectTo: callbackUrl(), captchaToken: captcha } });
         if (error) throw error;
         setFormNotice("phone" in contact ? "A sign-in code was requested for that phone number." : "Check your email for the secure sign-in link.");
         return;
@@ -147,6 +197,7 @@ export function Welcome({ onEnter, theme, setTheme }: WelcomeProps) {
         ? await client.auth.signInWithPassword({ phone: contact.phone, password, options: { captchaToken: captcha } })
         : await client.auth.signInWithPassword({ email: contact.email, password, options: { captchaToken: captcha } });
       if (error) throw error;
+      if (invite) return enterAccess(await joinWithInvitation(client, invite.token));
       const access = await loadOrganizationAccess(client, role === "creator" ? undefined : organizationCode);
       if (!access) {
         await client.auth.signOut();
@@ -164,9 +215,11 @@ export function Welcome({ onEnter, theme, setTheme }: WelcomeProps) {
   const continueWithGoogle = async () => {
     clearMessages();
     if (!backendReady) return unavailable("Google sign-in");
-    if (authMode === "signup" && !validateOwnerSetup()) return;
+    if (authMode === "signup" && !invite && !validateOwnerSetup()) return;
     const { getBrowserClient, savePendingOrganization, saveRequestedOrganizationCode } = await import("@/lib/supabase/browser-auth");
-    if (authMode === "signup") savePendingOrganization({ fullName: fullName.trim(), name: organizationName.trim(), code: organizationCode });
+    // A pending invitation is already saved and is accepted when the session is restored after Google.
+    if (invite) clearMessages();
+    else if (authMode === "signup") savePendingOrganization({ fullName: fullName.trim(), name: organizationName.trim(), code: organizationCode });
     else if (role !== "creator") saveRequestedOrganizationCode(organizationCode);
     setAuthBusy(true);
     const { error } = await getBrowserClient().auth.signInWithOAuth({ provider: "google", options: { redirectTo: callbackUrl() } });
@@ -194,7 +247,7 @@ export function Welcome({ onEnter, theme, setTheme }: WelcomeProps) {
     clearMessages();
   };
 
-  const primaryLabel = authBusy ? "Please wait…" : recoveryMode ? "Update password" : authMode === "signup" ? "Create owner account" : method === "password" ? current.signInLabel : "Send one-time code";
+  const primaryLabel = authBusy ? "Please wait…" : recoveryMode ? "Update password" : authMode === "signup" ? (invite ? "Create account and join" : "Create owner account") : invite && method === "password" ? "Sign in and join" : method === "password" ? current.signInLabel : "Send one-time code";
 
   return (
     <main className="welcome-shell" data-theme={theme}>
@@ -230,10 +283,21 @@ export function Welcome({ onEnter, theme, setTheme }: WelcomeProps) {
         </div>
 
         <section className="access-panel" id="access-panel">
-          {role === "creator" && !recoveryMode && (
-            <div className="auth-mode-tabs" role="group" aria-label="Owner access">
+          {invite && !recoveryMode && (
+            <div className="invite-banner" role="status">
+              <small>INVITATION</small>
+              <strong>Join {invite.preview.organizationName}</strong>
+              <small>
+                For {invite.preview.inviteeName}. Sign in, or create an account if you do not have one.
+                {invite.preview.emailRequired ? " Use the email address the invitation was sent to." : ""}
+                {` The link expires on ${new Date(invite.preview.expiresAt).toLocaleDateString()}.`}
+              </small>
+            </div>
+          )}
+          {(role === "creator" || invite) && !recoveryMode && (
+            <div className="auth-mode-tabs" role="group" aria-label={invite ? "Account access" : "Owner access"}>
               <button type="button" className={authMode === "signin" ? "active" : ""} aria-pressed={authMode === "signin"} onClick={() => { setAuthMode("signin"); clearMessages(); }}>Sign in</button>
-              <button type="button" className={authMode === "signup" ? "active" : ""} aria-pressed={authMode === "signup"} onClick={() => { setAuthMode("signup"); setMethod("password"); clearMessages(); }}>Create a space</button>
+              <button type="button" className={authMode === "signup" ? "active" : ""} aria-pressed={authMode === "signup"} onClick={() => { setAuthMode("signup"); setMethod("password"); clearMessages(); }}>{invite ? "Create an account" : "Create a space"}</button>
             </div>
           )}
 
@@ -241,8 +305,8 @@ export function Welcome({ onEnter, theme, setTheme }: WelcomeProps) {
             <span className="access-icon"><Icon size={22} /></span>
             <div>
               <p>{recoveryMode ? "Account recovery" : current.label}</p>
-              <h2>{recoveryMode ? "Set a new password" : authMode === "signup" ? "Create your space" : "Welcome back"}</h2>
-              <span className="access-subtitle">{recoveryMode ? "Choose a new password for your verified account." : authMode === "signup" ? "Verify the owner account, then configure your organization." : subtitles[role]}</span>
+              <h2>{recoveryMode ? "Set a new password" : invite ? (authMode === "signup" ? "Create your account" : "Sign in to join") : authMode === "signup" ? "Create your space" : "Welcome back"}</h2>
+              <span className="access-subtitle">{recoveryMode ? "Choose a new password for your verified account." : invite ? `You will join ${invite.preview.organizationName} as soon as you are signed in.` : authMode === "signup" ? "Verify the owner account, then configure your organization." : subtitles[role]}</span>
             </div>
           </div>
 
@@ -253,18 +317,18 @@ export function Welcome({ onEnter, theme, setTheme }: WelcomeProps) {
             </>
           )}
 
-          {!recoveryMode && authMode === "signup" && (
+          {!recoveryMode && authMode === "signup" && !invite && (
             <>
               <label><span>Full name</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" /></label>
               <label><span>Organization name</span><input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} autoComplete="organization" /></label>
             </>
           )}
-          {!recoveryMode && (role !== "creator" || authMode === "signup") && (
+          {!recoveryMode && !invite && (role !== "creator" || authMode === "signup") && (
             <label><span>Organization code</span><input value={organizationCode} onChange={(event) => setOrganizationCode(normalizeOrganizationCode(event.target.value))} autoComplete="off" /></label>
           )}
           {!recoveryMode && (
             <label>
-              <span>{authMode === "signup" ? "Owner email address" : "Email address or phone number"}</span>
+              <span>{authMode === "signup" ? (invite ? "Email address" : "Owner email address") : "Email address or phone number"}</span>
               <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} autoComplete="username" inputMode={authMode === "signup" ? "email" : "text"} />
             </label>
           )}
