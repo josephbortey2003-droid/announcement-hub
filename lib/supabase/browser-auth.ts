@@ -13,6 +13,8 @@ export type OrganizationAccess = {
   primaryColor: string;
   secondaryColor: string;
   logo: string;
+  /** Display name of the signed-in person, from their profile or account. */
+  viewerName: string;
 };
 
 export type PendingOrganization = {
@@ -82,7 +84,12 @@ async function resolveLogoUrl(client: SupabaseClient, logoPath: string | null) {
   return error ? "" : data.signedUrl;
 }
 
-async function accessForOrganization(client: SupabaseClient, organizationId: string, role: string): Promise<OrganizationAccess | null> {
+function displayNameFor(user: User) {
+  const fullName = typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name.trim() : "";
+  return fullName || user.email || user.phone || "Signed-in user";
+}
+
+async function accessForOrganization(client: SupabaseClient, user: User, organizationId: string, role: string): Promise<OrganizationAccess | null> {
   const { data: organization, error: organizationError } = await client
     .from("organizations")
     .select("id, name, code")
@@ -104,6 +111,7 @@ async function accessForOrganization(client: SupabaseClient, organizationId: str
     primaryColor: branding?.primary_color ?? "#065f46",
     secondaryColor: branding?.secondary_color ?? "#10b981",
     logo: await resolveLogoUrl(client, branding?.logo_path ?? null),
+    viewerName: displayNameFor(user),
   };
 }
 
@@ -121,7 +129,7 @@ export async function loadOrganizationAccess(client = getBrowserClient(), reques
 
   const normalizedRequestedCode = requestedCode ? normalizeOrganizationCode(requestedCode) : "";
   for (const membership of memberships ?? []) {
-    const access = await accessForOrganization(client, membership.organization_id, membership.role);
+    const access = await accessForOrganization(client, userResult.user, membership.organization_id, membership.role);
     if (!access) continue;
     if (normalizedRequestedCode && access.code !== normalizedRequestedCode) continue;
     return access;
@@ -140,7 +148,7 @@ export async function loadOrganizationAccessById(client: SupabaseClient, organiz
     .eq("status", "active")
     .maybeSingle();
   if (error || !membership) return null;
-  return accessForOrganization(client, membership.organization_id, membership.role);
+  return accessForOrganization(client, userResult.user, membership.organization_id, membership.role);
 }
 
 export async function updateOrganizationIdentity(client: SupabaseClient, value: OrganizationIdentityUpdate) {

@@ -492,3 +492,6 @@ img,svg,video,canvas{max-width:100%}
   .welcome-shell[data-theme="system"] .role-row:not(.active){background:#202b25;border-color:#3b4b43;color:#e7eee9}
   .welcome-shell[data-theme="system"] .role-row:not(.active) .role-icon,.welcome-shell[data-theme="system"] .role-row:not(.active) .role-tab-label{color:#d8e5de}
 }
+
+/* Preference note below the notification selector */
+.preference-list>.field-help{margin:0;padding:12px 22px 16px}
