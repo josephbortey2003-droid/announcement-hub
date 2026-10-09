@@ -54,8 +54,8 @@ The GitHub Pages preview contains only the browser interface. Server API routes,
 | `components/announcement/audience-composer.tsx` | Announcement drafting, audience building and review |
 | `lib/workspace/` | Shared interface types and pure helpers |
 | `lib/people/import.ts` | CSV/pasted member import and validation |
-| `lib/announcements/` | Preview and server-side recipient resolution |
-| `lib/supabase/` | Browser, server and admin clients; organization access; organization directory (`directory.ts`); invitations (`invitations.ts`) |
+| `lib/announcements/` | Preview recipient resolution |
+| `lib/supabase/` | Browser, server and admin clients; organization access; organization directory (`directory.ts`); invitations (`invitations.ts`); publishing, inbox and sent history (`announcements.ts`) |
 | `lib/sms/` | Hubtel adapter, phone normalization, segments, SMS authorization |
 | `app/api/` | Server routes: publishing and SMS |
 | `supabase/migrations/` | Schema, RLS policies and grants |
@@ -156,11 +156,20 @@ The same `BrandData` and CSS custom properties are used by desktop and mobile. C
 
 ## 9. Announcement publication security
 
-`POST /api/announcements/publish` validates a strict payload and never trusts the browser’s recipient count. It checks tenant membership and authority scope with the server-only client, and only then answers an idempotent retry, which is returned only to the owner or the original author. It rejects cross-tenant IDs, resolves active recipients with `resolveRecipientIds` (`lib/announcements/recipients.ts`) over key-ordered pages, batches inserts and records an audit event.
+Publishing is a single database transaction: `publish_announcement` (`supabase/migrations/20261009073623_announcement_publishing.sql`). It never trusts the browser's recipient count. In order, it:
+- checks the caller's active owner or authority membership;
+- answers an idempotent retry, but only to the owner or the original author;
+- validates priority, fallback delay and audience size;
+- rejects groups and people from other organizations or who are not active members;
+- for an authority, enforces active grants and refuses organization-wide sends;
+- resolves recipients (active members, exclusions win, author excluded);
+- writes the announcement, audiences, exclusions and deliveries, and records an audit event.
 
-This route is the **only** write path for announcements. Browser sessions have no `INSERT` or `UPDATE` privilege on `announcements` or its audience tables. An announcement's author must belong to its organization (composite foreign key), and its organization cannot be changed (trigger). Read receipts must reference the reader's own delivery, and `read_at` is set by the database.
+The browser calls it through `lib/supabase/announcements.ts`. `POST /api/announcements/publish` is a thin wrapper that calls the same function with the caller's session, so no service-role secret is involved.
 
-Current limitation: the multi-step publication uses compensating deletion for an unpublished draft rather than one PostgreSQL transaction. Moving the complete publication operation into a reviewed database transaction is a recommended hardening step before production.
+This function is the **only** write path for announcements. Browser sessions have no `INSERT` or `UPDATE` privilege on `announcements` or its audience tables. An announcement's author must belong to its organization (composite foreign key), and its organization cannot be changed (trigger). Read receipts must reference the reader's own delivery, and `read_at` is set by the database.
+
+Members read their own deliveries through `my_announcements` and record reads with `mark_announcement_read` (both under row-level security). Senders see recipient and read counts through `sent_announcements`: everything for owners, and only their own announcements for authorities. Elevated functions live in the `private` schema behind `SECURITY INVOKER` wrappers in `public`.
 
 ## 10. SMS integration
 

@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { publishAnnouncement } from "@/lib/supabase/announcements";
 import { createClient } from "@/lib/supabase/server";
-import type { Database } from "@/lib/supabase/database.types";
-import { idsOutside, resolveRecipientIds } from "@/lib/announcements/recipients";
 
 export const runtime = "nodejs";
+
+// HTTP entry point for publishing. The work, including every permission check,
+// happens in the publish_announcement database function as one transaction
+// (supabase/migrations/*_announcement_publishing.sql). This route runs it with
+// the caller's own session, so it needs no service-role secret. The browser
+// calls the same function directly through lib/supabase/announcements.ts.
 
 const requestSchema = z.object({
   clientRequestId: z.string().uuid(),
@@ -18,58 +22,9 @@ const requestSchema = z.object({
     groupIds: z.array(z.string().uuid()).max(100),
     membershipIds: z.array(z.string().uuid()).max(500),
     excludedMembershipIds: z.array(z.string().uuid()).max(500),
-  }).superRefine((audience, context) => {
-    if (!audience.wholeOrganization && !audience.groupIds.length && !audience.membershipIds.length) {
-      context.addIssue({ code: "custom", message: "At least one audience is required." });
-    }
   }),
   smsFallbackAfterMinutes: z.union([z.literal(5), z.literal(15), z.literal(30), z.literal(60), z.null()]),
 }).strict();
-
-type MembershipRow = { id: string };
-
-async function loadActiveMemberships(admin: ReturnType<typeof createAdminClient>, organizationId: string) {
-  const rows: MembershipRow[] = [];
-  for (let from = 0; ; from += 1_000) {
-    const { data, error } = await admin
-      .from("memberships")
-      .select("id")
-      .eq("organization_id", organizationId)
-      .eq("status", "active")
-      .order("id")
-      .range(from, from + 999);
-    if (error) throw new Error("Organization memberships could not be resolved.");
-    rows.push(...(data ?? []));
-    if (!data || data.length < 1_000) return rows;
-  }
-}
-
-type BatchTable =
-  | "announcement_audiences"
-  | "announcement_individual_audiences"
-  | "announcement_exclusions"
-  | "recipient_deliveries";
-
-type BatchRow<T extends BatchTable> = Database["public"]["Tables"][T]["Insert"];
-
-async function insertBatches<T extends BatchTable>(
-  admin: ReturnType<typeof createAdminClient>,
-  table: T,
-  rows: BatchRow<T>[]
-) {
-  for (let index = 0; index < rows.length; index += 500) {
-    const batch = rows.slice(index, index + 500);
-    const result = table === "announcement_audiences"
-      ? await admin.from("announcement_audiences").insert(batch as BatchRow<"announcement_audiences">[])
-      : table === "announcement_individual_audiences"
-        ? await admin.from("announcement_individual_audiences").insert(batch as BatchRow<"announcement_individual_audiences">[])
-        : table === "announcement_exclusions"
-          ? await admin.from("announcement_exclusions").insert(batch as BatchRow<"announcement_exclusions">[])
-          : await admin.from("recipient_deliveries").insert(batch as BatchRow<"recipient_deliveries">[]);
-    const { error } = result;
-    if (error) throw new Error(`The ${table} records could not be created.`);
-  }
-}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -84,207 +39,23 @@ export async function POST(request: Request) {
   }
 
   const input = parsed.data;
-  const admin = createAdminClient();
-  let announcementId: string | null = null;
-
   try {
-    const { data: actor, error: actorError } = await admin
-      .from("memberships")
-      .select("id, role")
-      .eq("organization_id", input.organizationId)
-      .eq("user_id", authData.user.id)
-      .eq("status", "active")
-      .maybeSingle();
-    if (actorError) throw new Error("Publishing membership could not be checked.");
-    if (!actor || !["owner", "authority"].includes(actor.role)) {
-      return NextResponse.json({ error: "You do not have publishing authority in this organization." }, { status: 403 });
-    }
-    if (actor.role === "authority" && input.audience.wholeOrganization) {
-      return NextResponse.json({ error: "Only the organization owner can publish organization-wide." }, { status: 403 });
-    }
-
-    // Idempotency lookup runs after authorization so that a retry can only reveal
-    // announcements to someone who is allowed to publish in this organization.
-    const { data: existing } = await admin
-      .from("announcements")
-      .select("id, status, author_membership_id")
-      .eq("organization_id", input.organizationId)
-      .eq("client_reference", input.clientRequestId)
-      .maybeSingle();
-    if (existing && (actor.role === "owner" || existing.author_membership_id === actor.id)) {
-      return NextResponse.json({ announcementId: existing.id, status: existing.status, duplicate: true });
-    }
-    if (existing) {
-      return NextResponse.json({ error: "This request reference is already in use." }, { status: 409 });
-    }
-
-    const uniqueGroupIds = [...new Set(input.audience.groupIds)];
-    const uniqueMemberIds = [...new Set(input.audience.membershipIds)];
-    const uniqueExcludedIds = [...new Set(input.audience.excludedMembershipIds)];
-
-    if (uniqueGroupIds.length) {
-      const { data: validGroups, error } = await admin
-        .from("groups")
-        .select("id")
-        .eq("organization_id", input.organizationId)
-        .in("id", uniqueGroupIds);
-      if (error || validGroups?.length !== uniqueGroupIds.length) {
-        return NextResponse.json({ error: "One or more selected groups do not belong to this organization." }, { status: 403 });
-      }
-    }
-
-    let grantedGroupIds = new Set<string>();
-    if (actor.role === "authority") {
-      const now = new Date().toISOString();
-      const { data: grants, error } = await admin
-        .from("authority_grants")
-        .select("group_id")
-        .eq("membership_id", actor.id)
-        .eq("can_publish", true)
-        .is("revoked_at", null)
-        .or(`expires_at.is.null,expires_at.gt.${now}`);
-      if (error) throw new Error("Publishing grants could not be checked.");
-      grantedGroupIds = new Set((grants ?? []).map((grant) => grant.group_id));
-      if (idsOutside(uniqueGroupIds, grantedGroupIds).length) {
-        return NextResponse.json({ error: "The announcement includes a group outside your authority." }, { status: 403 });
-      }
-      if (uniqueMemberIds.length) {
-        if (!grantedGroupIds.size) {
-          return NextResponse.json({ error: "No individual recipients are within your assigned audience." }, { status: 403 });
-        }
-        const { data: scopedRows, error: scopeError } = await admin
-          .from("group_members")
-          .select("membership_id, group_id")
-          .in("membership_id", uniqueMemberIds)
-          .in("group_id", [...grantedGroupIds]);
-        if (scopeError) throw new Error("Individual recipient scope could not be checked.");
-        if (idsOutside(uniqueMemberIds, (scopedRows ?? []).map((row) => row.membership_id)).length) {
-          return NextResponse.json({ error: "A selected person is outside your assigned audience." }, { status: 403 });
-        }
-      }
-    }
-
-    const activeMemberships = await loadActiveMemberships(admin, input.organizationId);
-    const activeIds = new Set(activeMemberships.map((membership) => membership.id));
-    if (idsOutside([...uniqueMemberIds, ...uniqueExcludedIds], activeIds).length) {
-      return NextResponse.json({ error: "A selected or excluded person is not an active organization member." }, { status: 422 });
-    }
-
-    const groupMembershipIds: string[] = [];
-    if (uniqueGroupIds.length) {
-      for (let from = 0; ; from += 1_000) {
-        const { data: groupMembers, error } = await admin
-          .from("group_members")
-          .select("membership_id")
-          .eq("organization_id", input.organizationId)
-          .in("group_id", uniqueGroupIds)
-          .order("group_id")
-          .order("membership_id")
-          .range(from, from + 999);
-        if (error) throw new Error("Group recipients could not be resolved.");
-        (groupMembers ?? []).forEach((row) => groupMembershipIds.push(row.membership_id));
-        if (!groupMembers || groupMembers.length < 1_000) break;
-      }
-    }
-    const recipientIds = resolveRecipientIds({
-      wholeOrganization: input.audience.wholeOrganization,
-      activeMembershipIds: activeIds,
-      individualMembershipIds: uniqueMemberIds,
-      groupMembershipIds,
-      excludedMembershipIds: uniqueExcludedIds,
+    const result = await publishAnnouncement(supabase, input.organizationId, {
+      clientRequestId: input.clientRequestId,
+      title: input.title,
+      body: input.body,
+      priority: input.priority,
+      audienceLabel: "",
+      audience: input.audience,
+      recipientIds: [],
+      smsFallbackMinutes: input.smsFallbackAfterMinutes,
     });
-    if (!recipientIds.size) {
-      return NextResponse.json({ error: "The audience resolves to no active recipients." }, { status: 422 });
-    }
-
-    const { data: announcement, error: announcementError } = await admin
-      .from("announcements")
-      .insert({
-        organization_id: input.organizationId,
-        author_membership_id: actor.id,
-        title: input.title,
-        body: input.body,
-        priority: input.priority,
-        status: "draft",
-        audience_mode: input.audience.wholeOrganization ? "organization" : "targeted",
-        sms_fallback_after_minutes: input.smsFallbackAfterMinutes,
-        client_reference: input.clientRequestId,
-      })
-      .select("id")
-      .single();
-    if (announcementError?.code === "23505") {
-      const { data: duplicate } = await admin
-        .from("announcements")
-        .select("id, status")
-        .eq("organization_id", input.organizationId)
-        .eq("client_reference", input.clientRequestId)
-        .maybeSingle();
-      if (duplicate) return NextResponse.json({ announcementId: duplicate.id, status: duplicate.status, duplicate: true });
-    }
-    if (announcementError || !announcement) throw new Error("The announcement could not be created.");
-    announcementId = announcement.id;
-
-    await insertBatches(admin, "announcement_audiences", uniqueGroupIds.map((groupId) => ({
-      announcement_id: announcement.id,
-      organization_id: input.organizationId,
-      group_id: groupId,
-    })));
-    await insertBatches(admin, "announcement_individual_audiences", uniqueMemberIds.map((membershipId) => ({
-      announcement_id: announcement.id,
-      organization_id: input.organizationId,
-      membership_id: membershipId,
-    })));
-    await insertBatches(admin, "announcement_exclusions", uniqueExcludedIds.map((membershipId) => ({
-      announcement_id: announcement.id,
-      organization_id: input.organizationId,
-      membership_id: membershipId,
-    })));
-
-    const publishedAt = new Date();
-    const fallbackDueAt = input.smsFallbackAfterMinutes === null
-      ? null
-      : new Date(publishedAt.getTime() + input.smsFallbackAfterMinutes * 60_000).toISOString();
-    await insertBatches(admin, "recipient_deliveries", [...recipientIds].map((membershipId) => ({
-      organization_id: input.organizationId,
-      announcement_id: announcement.id,
-      membership_id: membershipId,
-      in_app_status: "queued",
-      sms_fallback_due_at: fallbackDueAt,
-    })));
-
-    const { error: publishError } = await admin
-      .from("announcements")
-      .update({ status: "published", published_at: publishedAt.toISOString() })
-      .eq("id", announcement.id)
-      .eq("status", "draft");
-    if (publishError) throw new Error("The announcement could not be published.");
-
-    const { error: auditError } = await admin.from("audit_events").insert({
-      organization_id: input.organizationId,
-      actor_user_id: authData.user.id,
-      action: "announcement.published",
-      target_type: "announcement",
-      target_id: announcement.id,
-      metadata: {
-        audience_mode: input.audience.wholeOrganization ? "organization" : "targeted",
-        group_count: uniqueGroupIds.length,
-        individual_count: uniqueMemberIds.length,
-        exclusion_count: uniqueExcludedIds.length,
-        recipient_count: recipientIds.size,
-      },
-    });
-    // The announcement is already published, so a missing audit row is logged rather than undone.
-    if (auditError) console.error("Announcement audit write failed", auditError.code);
-
-    return NextResponse.json({
-      announcementId: announcement.id,
-      status: "published",
-      recipientCount: recipientIds.size,
-      smsFallbackAfterMinutes: input.smsFallbackAfterMinutes,
-    }, { status: 201 });
+    return NextResponse.json(
+      { announcementId: result.announcementId, status: "published", recipientCount: result.recipientCount, duplicate: result.duplicate },
+      { status: result.duplicate ? 200 : 201 }
+    );
   } catch (error) {
-    if (announcementId) await admin.from("announcements").delete().eq("id", announcementId).eq("status", "draft");
-    console.error("Announcement publish failed", error instanceof Error ? error.message : "unknown error");
-    return NextResponse.json({ error: "The announcement could not be published." }, { status: 500 });
+    // publishAnnouncement turns database refusals into plain explanations; nothing was published.
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The announcement could not be published." }, { status: 422 });
   }
 }

@@ -139,6 +139,10 @@ Owners create one-time invitation links from the directory and share them by cop
 
 Delivery deliberately uses the owner's own WhatsApp or email instead of a paid provider. See [CHANGELOG.md](../CHANGELOG.md).
 
+### Announcements delivered for real (9 October 2026)
+
+Publishing moved from a multi-step server route (which needed a never-configured service-role secret and used compensating deletes) into one database transaction, `publish_announcement`, called directly from the browser. Members get a real inbox with read receipts; senders see read counts. Decision: the author is no longer sent their own announcement. See [CHANGELOG.md](../CHANGELOG.md).
+
 ## Design references and skills consulted
 
 The project used the supplied UI/UX, frontend, mobile, animation, accessibility, color, typography and 21st.dev references as design guidance. Later direct product decisions override early generated design-system suggestions. External reference material was treated as inspiration, not copied customer evidence or factual product claims.

@@ -47,7 +47,13 @@ type AudienceComposerProps = {
   allowOrganization: boolean;
   organizationName: string;
   onCancel: () => void;
-  onPublish: (draft: AnnouncementDraft) => void;
+  /** May return a promise; if it rejects, the composer unlocks and shows the error. */
+  onPublish: (draft: AnnouncementDraft) => void | Promise<void>;
+  /**
+   * When the member list is not available (an authority cannot see people's names),
+   * the server counts the recipients at publishing time instead of the browser.
+   */
+  recipientsCountedOnPublish?: boolean;
 };
 
 export function AudienceComposer({
@@ -57,6 +63,7 @@ export function AudienceComposer({
   organizationName,
   onCancel,
   onPublish,
+  recipientsCountedOnPublish = false,
 }: AudienceComposerProps) {
   const [step, setStep] = useState<"compose" | "review">("compose");
   const [clientRequestId] = useState(() => crypto.randomUUID());
@@ -116,30 +123,38 @@ export function AudienceComposer({
     if (title.trim().length < 2) return setError("Add a short announcement title of at least two characters.");
     if (!body.trim()) return setError("Write the announcement message.");
     if (!includesSomething) return setError("Choose at least one audience.");
-    if (!recipients.length) return setError("The current choices resolve to no recipients. Add members or change the audience.");
+    if (!recipients.length && !recipientsCountedOnPublish) return setError("The current choices resolve to no recipients. Add members or change the audience.");
     setError("");
     setStep("review");
   };
 
-  const publish = () => {
+  const publish = async () => {
     if (published.current) return;
     published.current = true;
     setPublishing(true);
-    onPublish({
-      clientRequestId,
-      title: title.trim(),
-      body: body.trim(),
-      priority,
-      audienceLabel,
-      audience: {
-        wholeOrganization,
-        groupIds: selectedGroups,
-        membershipIds: selectedPeople,
-        excludedMembershipIds: activeExcludedPeople,
-      },
-      recipientIds: recipients.map((person) => person.id),
-      smsFallbackMinutes: fallback === "none" ? null : Number(fallback),
-    });
+    setError("");
+    try {
+      await onPublish({
+        clientRequestId,
+        title: title.trim(),
+        body: body.trim(),
+        priority,
+        audienceLabel,
+        audience: {
+          wholeOrganization,
+          groupIds: selectedGroups,
+          membershipIds: selectedPeople,
+          excludedMembershipIds: activeExcludedPeople,
+        },
+        recipientIds: recipients.map((person) => person.id),
+        smsFallbackMinutes: fallback === "none" ? null : Number(fallback),
+      });
+    } catch (failure) {
+      // Nothing was published; let the author fix the problem and try again with the same request id.
+      published.current = false;
+      setPublishing(false);
+      setError(failure instanceof Error ? failure.message : "The announcement could not be published.");
+    }
   };
 
   if (step === "review") {
@@ -150,13 +165,14 @@ export function AudienceComposer({
         <div><dt>Title</dt><dd>{title}</dd></div>
         <div><dt>Priority</dt><dd>{priority}</dd></div>
         <div><dt>Audience</dt><dd>{audienceLabel}</dd></div>
-        <div><dt>Resolved recipients</dt><dd>{recipients.length}</dd></div>
+        <div><dt>Resolved recipients</dt><dd>{recipientsCountedOnPublish && !recipients.length ? "Counted when you publish" : recipients.length}</dd></div>
         <div><dt>SMS fallback</dt><dd>{fallback === "none" ? "Off" : `After ${fallback} minutes if unread`}</dd></div>
         {fallback !== "none" && <div><dt>Maximum SMS segments</dt><dd>{maximumSmsSegments} if every SMS-capable recipient remains unread</dd></div>}
       </dl>
       <article className="message-preview"><span>MESSAGE PREVIEW</span><h3>{title}</h3><p>{body}</p></article>
-      <section className="recipient-preview"><h3>Recipient check</h3><p>{recipients.slice(0, 5).map((person) => person.name).join(", ")}{recipients.length > 5 ? ` and ${recipients.length - 5} more` : ""}</p>{fallback !== "none" && missingPhone > 0 && <p className="field-warning"><CircleAlert size={16}/>{missingPhone} {missingPhone === 1 ? "recipient has" : "recipients have"} no phone number and cannot receive SMS fallback.</p>}</section>
-      <footer><button type="button" className="secondary" onClick={() => setStep("compose")}>Back</button><button type="button" className="primary-action" onClick={publish} disabled={publishing}><Send size={16}/> {publishing ? "Publishing…" : "Publish announcement"}</button></footer>
+      <section className="recipient-preview"><h3>Recipient check</h3><p>{recipientsCountedOnPublish && !recipients.length ? "Everyone currently in the selected groups will receive it." : ""}{recipients.slice(0, 5).map((person) => person.name).join(", ")}{recipients.length > 5 ? ` and ${recipients.length - 5} more` : ""}</p>{fallback !== "none" && missingPhone > 0 && <p className="field-warning"><CircleAlert size={16}/>{missingPhone} {missingPhone === 1 ? "recipient has" : "recipients have"} no phone number and cannot receive SMS fallback.</p>}</section>
+      {error && <p className="inline-error" role="alert"><CircleAlert size={16}/>{error}</p>}
+      <footer><button type="button" className="secondary" disabled={publishing} onClick={() => setStep("compose")}>Back</button><button type="button" className="primary-action" onClick={publish} disabled={publishing}><Send size={16}/> {publishing ? "Publishing…" : "Publish announcement"}</button></footer>
     </section>;
   }
 
@@ -177,7 +193,7 @@ export function AudienceComposer({
 
     <section className="delivery-choice"><label><span>Unread-message fallback</span><select value={fallback} onChange={(event) => setFallback(event.target.value)}><option value="none">In-app delivery only</option><option value="5">SMS after 5 minutes</option><option value="15">SMS after 15 minutes</option><option value="30">SMS after 30 minutes</option><option value="60">SMS after 1 hour</option></select></label><p>SMS is queued only for unread recipients after the selected delay. The provider-confirmed price will appear only after Hubtel is configured.</p></section>
 
-    <aside className="resolution-summary" aria-live="polite"><div><strong>{recipients.length}</strong><span>resolved {recipients.length === 1 ? "recipient" : "recipients"}</span></div><p>{audienceLabel || "No audience selected yet."}</p>{fallback !== "none" && <span>{smsCapable} SMS-capable · up to {maximumSmsSegments} segments · {missingPhone} without phone numbers</span>}</aside>
+    <aside className="resolution-summary" aria-live="polite"><div><strong>{recipientsCountedOnPublish && !recipients.length ? "—" : recipients.length}</strong><span>{recipientsCountedOnPublish && !recipients.length ? "recipients counted when you publish" : `resolved ${recipients.length === 1 ? "recipient" : "recipients"}`}</span></div><p>{audienceLabel || "No audience selected yet."}</p>{fallback !== "none" && <span>{smsCapable} SMS-capable · up to {maximumSmsSegments} segments · {missingPhone} without phone numbers</span>}</aside>
     {error && <p className="inline-error" role="alert"><CircleAlert size={16}/>{error}</p>}
     <footer><button type="button" className="secondary" onClick={onCancel}>Cancel</button><button type="button" className="primary-action" onClick={review}><Check size={16}/> Review announcement</button></footer>
   </section>;

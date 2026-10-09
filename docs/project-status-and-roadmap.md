@@ -29,9 +29,9 @@ Last reviewed: 9 October 2026
 | Paste/CSV onboarding | Implemented, backend connected | RFC 4180 parsing, header detection, email/phone validation and per-row errors; signed-in owners save up to 500 people per import in one transaction. Invitations are not yet sent. |
 | Directory sync | Planned | Interface explains requirements but does not simulate a connection. |
 | Groups and authority assignment | Groups saved; authority prototype | Signed-in owners save groups. Authority grants need accepted members, so they wait for invitations. |
-| Flexible announcement audience | Prototype plus server endpoint | UI and resolver are tested; server endpoint requires deployed backend and stored members/groups. |
-| In-app delivery records | Implemented, configuration required | Server publication creates recipient snapshots in Supabase. |
-| Read receipts and inbox persistence | Schema only | Tables/policies exist and receipts are bound to the reader's own delivery (behavior-tested); member UI is still backed by preview arrays. |
+| Flexible announcement audience | Implemented, backend connected | Whole organization, groups, individuals and exclusions, resolved and permission-checked in one database transaction (behavior-tested). |
+| In-app delivery records | Implemented, backend connected | Publishing creates one delivery per recipient, with the SMS fallback due time; no server secret needed. |
+| Read receipts and inbox persistence | Implemented, backend connected | Members' inbox loads their own deliveries; *Mark as read* records a receipt once; owners and leaders see read counts. Not yet exercised with real accounts. |
 | Hubtel SMS send/status | Implemented, disabled | Requires credentials, sender approval, test recipients, database and full-stack deployment. |
 | WhatsApp delivery | Planned | No production integration is claimed. |
 | Billing balance | Planned | Ledger schema exists; no real account balance or top-up workflow. |
@@ -44,7 +44,7 @@ At the current revision:
 
 - ESLint and the TypeScript type check pass.
 - 38 unit tests pass.
-- 26 behavioral database tests pass on PGlite, and the six attack tests fail when the hardening migration is removed.
+- 34 behavioral database tests pass on PGlite, and the six attack tests fail when the hardening migration is removed.
 - The full application build passes.
 - The GitHub Pages build passes.
 - Organization identity remains visible across mobile and desktop responsive layouts.
@@ -97,11 +97,12 @@ and performance advisors report no current issues.
 
 ### Milestone 4: persist communication
 
-- Connect the composer to the protected publish endpoint.
-- Build member inbox queries and read receipts.
-- Add owner and authority sent history.
-- Move publication into a single reviewed database transaction.
-- Test tenant isolation and authority boundaries with multiple organizations.
+- Done: the composer publishes through one reviewed database transaction (`publish_announcement`).
+- Done: member inbox and read receipts.
+- Done: owner and authority sent history with read counts.
+- Done (behavior tests): tenant isolation and authority boundaries across organizations.
+- Next: persist authority assignments (grants and the authority role) so leaders can be created from the owner portal.
+- Next: live updates (Supabase Realtime) so new announcements appear without refreshing.
 
 ### Milestone 5: controlled delivery
 

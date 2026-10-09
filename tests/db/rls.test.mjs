@@ -387,3 +387,88 @@ test("signed-out visitors can run only the invitation preview, and elevated func
       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`);
   assert.deepEqual(exposedDefiners.rows, []);
 });
+
+// Announcement publishing, inbox and sent history (*_announcement_publishing.sql)
+
+let referenceCounter = 0;
+const reference = () => id(7000 + ++referenceCounter);
+const publish = (userId, audience, extra = {}) => asUser(userId, `
+  select public.publish_announcement($1, $2, $3, $4, $5, $6, $7::uuid[], $8::uuid[], $9::uuid[], $10) as result`,
+  [extra.organization ?? ORG_A, extra.reference ?? reference(), extra.title ?? "Lab closed", "The lab is closed today.", extra.priority ?? "normal",
+   audience.whole ?? false, audience.groups ?? [], audience.people ?? [], audience.excluded ?? [], extra.fallback ?? null]);
+const membershipOf = async (userId) => (await db.query("select id from public.memberships where organization_id = $1 and user_id = $2", [ORG_A, userId])).rows[0].id;
+const recipientsOf = async (announcementId) =>
+  (await db.query("select membership_id from public.recipient_deliveries where announcement_id = $1 order by membership_id", [announcementId])).rows.map((row) => row.membership_id);
+const groupId = async (name) => (await db.query("select id from public.groups where organization_id = $1 and name = $2", [ORG_A, name])).rows[0].id;
+
+test("members cannot publish, and nobody can publish into another organization", async () => {
+  await rejectsWithCode(publish(USERS.memberA, { whole: true }), "42501", "members cannot publish");
+  await rejectsWithCode(publish(USERS.ownerB, { whole: true }), "42501", "another organization's owner cannot publish here");
+});
+
+test("an owner's organization-wide announcement reaches every active member except the author", async () => {
+  const { rows } = await publish(USERS.ownerA, { whole: true }, { fallback: 15 });
+  const result = rows[0].result;
+  const expected = [MEMBERSHIP.authorityA, MEMBERSHIP.memberA, await membershipOf(USERS.ama)].sort();
+  assert.deepEqual(await recipientsOf(result.announcementId), expected);
+  assert.equal(result.recipientCount, 3);
+  const due = await db.query("select count(*)::int as count from public.recipient_deliveries where announcement_id = $1 and sms_fallback_due_at is not null", [result.announcementId]);
+  assert.equal(due.rows[0].count, 3);
+});
+
+test("retrying the same request returns the same announcement instead of a copy", async () => {
+  const ref = reference();
+  const first = (await publish(USERS.ownerA, { whole: true }, { reference: ref })).rows[0].result;
+  const again = (await publish(USERS.ownerA, { whole: true }, { reference: ref })).rows[0].result;
+  assert.equal(again.announcementId, first.announcementId);
+  assert.equal(again.duplicate, true);
+});
+
+test("groups, individuals and exclusions combine, and exclusions win", async () => {
+  const ama = await membershipOf(USERS.ama);
+  const { rows } = await publish(USERS.ownerA, { groups: [await groupId("Science")], people: [MEMBERSHIP.memberA], excluded: [ama] });
+  assert.deepEqual(await recipientsOf(rows[0].result.announcementId), [MEMBERSHIP.memberA]);
+});
+
+test("an authority publishes only to their granted groups", async () => {
+  const science = await groupId("Science");
+  await rejectsWithCode(publish(USERS.authorityA, { whole: true }), "42501", "authorities cannot publish organization-wide");
+  await rejectsWithCode(publish(USERS.authorityA, { groups: [await groupId("Finance")] }), "42501", "ungranted groups must be refused");
+  await rejectsWithCode(publish(USERS.authorityA, { groups: [science], people: [MEMBERSHIP.memberA] }), "42501", "people outside the granted groups must be refused");
+  const { rows } = await publish(USERS.authorityA, { groups: [science] }, { title: "Science lab" });
+  assert.deepEqual(await recipientsOf(rows[0].result.announcementId), [await membershipOf(USERS.ama)]);
+});
+
+test("invalid audiences and settings are refused", async () => {
+  await rejectsWithCode(publish(USERS.ownerA, {}), "22023", "an empty audience must be refused");
+  await rejectsWithCode(publish(USERS.ownerA, { people: [id(999)] }), "22023", "unknown people must be refused");
+  await rejectsWithCode(publish(USERS.ownerA, { whole: true }, { fallback: 7 }), "22023", "unsupported fallback delays must be refused");
+  await rejectsWithCode(publish(USERS.ownerA, { whole: true }, { title: "A" }), "23514", "titles shorter than two characters must be refused");
+});
+
+test("a member's inbox lists only their own announcements, and reading is recorded once", async () => {
+  const inbox = await asUser(USERS.ama, "select * from public.my_announcements($1)", [ORG_A]);
+  assert.ok(inbox.rows.length >= 2);
+  assert.ok(inbox.rows.some((row) => row.title === "Science lab" && row.author_role === "authority" && row.read_at === null));
+  const delivery = inbox.rows.find((row) => row.title === "Science lab").delivery_id;
+  const first = (await asUser(USERS.ama, "select public.mark_announcement_read($1) as read_at", [delivery])).rows[0].read_at;
+  const second = (await asUser(USERS.ama, "select public.mark_announcement_read($1) as read_at", [delivery])).rows[0].read_at;
+  assert.ok(first);
+  assert.equal(String(second), String(first));
+  // Someone else's delivery cannot be marked read.
+  const other = (await asUser(USERS.memberA, "select public.mark_announcement_read($1) as read_at", [delivery])).rows[0].read_at;
+  assert.equal(other, null);
+  assert.equal((await asUser(USERS.ownerB, "select * from public.my_announcements($1)", [ORG_A])).rows.length, 0);
+});
+
+test("owners see all sent announcements with read counts; authorities see their own", async () => {
+  const owner = await asUser(USERS.ownerA, "select * from public.sent_announcements($1)", [ORG_A]);
+  const science = owner.rows.find((row) => row.title === "Science lab");
+  assert.equal(science.recipient_count, 1);
+  assert.equal(science.read_count, 1);
+  assert.equal(science.mine, false);
+  const authority = await asUser(USERS.authorityA, "select title from public.sent_announcements($1)", [ORG_A]);
+  assert.deepEqual([...new Set(authority.rows.map((row) => row.title))].sort(), ["Lab closed", "Science lab"]);
+  assert.ok(owner.rows.length > authority.rows.length);
+  await rejectsWithCode(asUser(USERS.memberA, "select * from public.sent_announcements($1)", [ORG_A]), "42501", "members cannot see sent history");
+});
