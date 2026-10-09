@@ -48,9 +48,12 @@ Open `http://localhost:5173`.
 
 ```bash
 npm run lint
+npm run typecheck
+npm test          # unit tests + database security tests (no Docker needed)
 npm run build
-npm run test:unit
 ```
+
+`npm run test:db` runs every migration in `supabase/migrations` on PGlite (PostgreSQL in WebAssembly) and checks the row-level security rules by acting as different signed-in users.
 
 ## Documentation
 
@@ -61,7 +64,8 @@ The complete project record starts at [docs/README.md](docs/README.md), includin
 - the [current status and roadmap](docs/project-status-and-roadmap.md);
 - the [development history](docs/development-history.md);
 - [backend setup](docs/backend-setup.md);
-- [Hubtel SMS setup](docs/hubtel-sms-setup.md).
+- [Hubtel SMS setup](docs/hubtel-sms-setup.md);
+- the [changelog](CHANGELOG.md), which lists every change with its location in the code.
 
 ## Environment configuration
 

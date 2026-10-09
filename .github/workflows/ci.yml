@@ -30,8 +30,14 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Type check
+        run: npm run typecheck
+
       - name: Unit tests
         run: npm run test:unit
+
+      - name: Database security tests
+        run: npm run test:db
 
       - name: Build
         run: npm run build

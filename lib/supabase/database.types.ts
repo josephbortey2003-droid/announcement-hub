@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       announcement_audiences: {
@@ -195,6 +220,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "announcements_author_org_fk"
+            columns: ["author_membership_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
             foreignKeyName: "announcements_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -374,6 +406,49 @@ export type Database = {
           },
         ]
       }
+      directory_group_assignments: {
+        Row: {
+          created_at: string
+          directory_entry_id: string
+          group_id: string
+          organization_id: string
+        }
+        Insert: {
+          created_at?: string
+          directory_entry_id: string
+          group_id: string
+          organization_id: string
+        }
+        Update: {
+          created_at?: string
+          directory_entry_id?: string
+          group_id?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "directory_group_assignments_directory_entry_id_organizatio_fkey"
+            columns: ["directory_entry_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_directory"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "directory_group_assignments_group_id_organization_id_fkey"
+            columns: ["group_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "directory_group_assignments_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       group_members: {
         Row: {
           created_at: string
@@ -514,6 +589,7 @@ export type Database = {
           accepted_at: string | null
           created_at: string
           created_by: string
+          directory_entry_id: string | null
           email: string | null
           expires_at: string
           id: string
@@ -526,6 +602,7 @@ export type Database = {
           accepted_at?: string | null
           created_at?: string
           created_by: string
+          directory_entry_id?: string | null
           email?: string | null
           expires_at: string
           id?: string
@@ -538,6 +615,7 @@ export type Database = {
           accepted_at?: string | null
           created_at?: string
           created_by?: string
+          directory_entry_id?: string | null
           email?: string | null
           expires_at?: string
           id?: string
@@ -547,6 +625,13 @@ export type Database = {
           token_hash?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "invitations_directory_entry_id_fkey"
+            columns: ["directory_entry_id"]
+            isOneToOne: true
+            referencedRelation: "organization_directory"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "invitations_organization_id_fkey"
             columns: ["organization_id"]
@@ -633,6 +718,63 @@ export type Database = {
             foreignKeyName: "organization_branding_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_directory: {
+        Row: {
+          created_at: string
+          created_by: string
+          email: string | null
+          full_name: string
+          id: string
+          member_reference: string | null
+          membership_id: string | null
+          onboarding_status: string
+          organization_id: string
+          phone_e164: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          email?: string | null
+          full_name: string
+          id?: string
+          member_reference?: string | null
+          membership_id?: string | null
+          onboarding_status?: string
+          organization_id: string
+          phone_e164?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          email?: string | null
+          full_name?: string
+          id?: string
+          member_reference?: string | null
+          membership_id?: string | null
+          onboarding_status?: string
+          organization_id?: string
+          phone_e164?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_directory_membership_id_fkey"
+            columns: ["membership_id"]
+            isOneToOne: true
+            referencedRelation: "memberships"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_directory_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -765,6 +907,17 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "read_receipts_own_delivery_fk"
+            columns: [
+              "recipient_delivery_id",
+              "membership_id",
+              "organization_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "recipient_deliveries"
+            referencedColumns: ["id", "membership_id", "organization_id"]
+          },
+          {
             foreignKeyName: "read_receipts_recipient_delivery_id_fkey"
             columns: ["recipient_delivery_id"]
             isOneToOne: true
@@ -895,6 +1048,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      import_directory_entries: {
+        Args: {
+          entries: Json
+          import_source: string
+          target_organization: string
+        }
+        Returns: Json
+      }
       update_organization_identity: {
         Args: {
           target_code: string
@@ -1045,6 +1206,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       announcement_status: ["draft", "published", "cancelled"],

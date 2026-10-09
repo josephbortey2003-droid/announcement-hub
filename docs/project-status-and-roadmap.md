@@ -1,6 +1,6 @@
 # Project status and roadmap
 
-Last reviewed: 25 September 2026
+Last reviewed: 9 October 2026
 
 ## Status definitions
 
@@ -25,12 +25,12 @@ Last reviewed: 25 September 2026
 | Organization branding persistence | Implemented, configuration required | Security-invoker RPC, private storage and signed URLs. |
 | Branding propagation to members | Implemented, configuration required | Membership-scoped reads plus RLS-protected Realtime refresh. |
 | Add one person | Prototype | Adds a preview record in browser state. |
-| Paste/CSV onboarding | Prototype | Parses and validates preview rows; does not yet create invitations. |
+| Paste/CSV onboarding | Prototype | RFC 4180 parsing, header detection, email/phone validation, duplicate detection and per-row errors (unit-tested); does not yet create invitations. |
 | Directory sync | Planned | Interface explains requirements but does not simulate a connection. |
 | Groups and authority assignment | Prototype plus schema | Interface state is temporary; database tables and policies exist. |
 | Flexible announcement audience | Prototype plus server endpoint | UI and resolver are tested; server endpoint requires deployed backend and stored members/groups. |
 | In-app delivery records | Implemented, configuration required | Server publication creates recipient snapshots in Supabase. |
-| Read receipts and inbox persistence | Schema only | Tables/policies exist; member UI is still backed by preview arrays. |
+| Read receipts and inbox persistence | Schema only | Tables/policies exist and receipts are bound to the reader's own delivery (behavior-tested); member UI is still backed by preview arrays. |
 | Hubtel SMS send/status | Implemented, disabled | Requires credentials, sender approval, test recipients, database and full-stack deployment. |
 | WhatsApp delivery | Planned | No production integration is claimed. |
 | Billing balance | Planned | Ledger schema exists; no real account balance or top-up workflow. |
@@ -41,14 +41,15 @@ Last reviewed: 25 September 2026
 
 At the current revision:
 
-- ESLint passes.
-- Eight unit tests pass.
+- ESLint and the TypeScript type check pass.
+- 26 unit tests pass.
+- 12 behavioral database tests pass on PGlite, and the six attack tests fail when the hardening migration is removed.
 - The full application build passes.
 - The GitHub Pages build passes.
 - Organization identity remains visible across mobile and desktop responsive layouts.
 - GitHub Actions validates pushes and deploys the preview.
 
-Database migrations are applied to the linked hosted development project. The
+Every migration in `supabase/migrations`, including the October 2026 hardening migrations and the organization-directory migrations, is applied to the hosted development project, and the repository versions match the hosted migration history. The security advisor reports no issues; the performance advisor reports informational notices only (unindexed foreign keys, unused indexes on an empty database). The
 pgTAP suite still requires Docker or another supported runner. Supabase security
 and performance advisors report no current issues.
 
@@ -68,6 +69,9 @@ and performance advisors report no current issues.
 ## Recommended implementation sequence
 
 ### Milestone 1: verify the database
+
+- Connect the organization directory (`organization_directory`, `import_directory_entries`) to the People screen.
+- Add covering indexes for the foreign keys the performance advisor lists once real query patterns are known.
 
 - Install Docker Desktop or another supported pgTAP runner.
 - Run pgTAP tests against an isolated test database.

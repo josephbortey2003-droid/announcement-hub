@@ -1,246 +1,104 @@
 "use client";
-/* Logo previews are local data URLs, so framework image optimization is not applicable. */
-/* eslint-disable @next/next/no-img-element */
 
-import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import type { LucideIcon } from "lucide-react";
-import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AudienceComposer, type AnnouncementDraft } from "@/components/announcement/audience-composer";
+// Entry point: shows the sign-in page, or the workspace for the chosen portal.
+// The interface itself lives in components/auth and components/workspace.
+
+import { useEffect, useState } from "react";
+import { Welcome } from "@/components/auth/welcome";
+import { Workspace } from "@/components/workspace/workspace";
 import { getPublicSupabaseConfig } from "@/lib/supabase/config";
-import { isValidOrganizationCode, normalizeOrganizationCode } from "@/lib/organizations/code";
-import type { OrganizationAccess } from "@/lib/supabase/browser-auth";
+import { brandFromAccess, viewerFromAccess } from "@/lib/workspace/access";
 import {
-  ArrowLeft, ArrowRight, Bell, Building2, Check, CircleAlert, Eye, EyeOff,
-  GraduationCap, History, Inbox,
-  KeyRound, LogOut, Menu, MessageSquareText, Palette, Plus,
-  Monitor, Moon, Radio, Send, Settings, ShieldCheck, Sun,
-  UserPlus, Users, WalletCards, X
-} from "lucide-react";
+  demoBrand, previewViewer,
+  type Authority, type BrandData, type Group, type Person, type Portal, type PublishedAnnouncement, type ThemeMode, type Viewer,
+} from "@/lib/workspace/model";
 
-type Portal = "creator" | "authority" | "member";
-type CreatorView = "overview" | "announcements" | "compose" | "people" | "authorities" | "groups" | "delivery" | "billing" | "branding";
-type AuthorityView = "inbox" | "compose" | "history";
-type MemberView = "inbox" | "history" | "preferences";
-type Modal = "people" | "authority" | "group" | "announcement" | "branding" | null;
-type ThemeMode="system"|"light"|"dark";
-type BrandData={organizationId?:string;name:string;code:string;color:string;secondaryColor:string;logo:string};
-type Person={id:string;name:string;email:string;phone:string;group:string};
-type Group={id:string;name:string;type:string};
-type Authority={id:string;personId:string;level:string;scope:string};
-type PublishedAnnouncement=AnnouncementDraft&{id:string;sender:string;sentAt:string};
-const demoBrand:BrandData={name:"Demo University",code:"DEMO-ORG",color:"#176b91",secondaryColor:"#d6ad43",logo:""};
-const brandFromAccess=(access:OrganizationAccess):BrandData=>({organizationId:access.organizationId,name:access.name,code:access.code,color:access.primaryColor,secondaryColor:access.secondaryColor,logo:access.logo});
-const initials=(value:string)=>value.split(/\s+/).filter(Boolean).slice(0,2).map(v=>v[0]).join("").toUpperCase()||"AH";
-const safeCell=(value:string)=>!/^[=+@-]/.test(value.trim());
-const readableText=(hex:string)=>{const value=hex.replace("#","");if(value.length!==6)return"#ffffff";const [r,g,b]=[0,2,4].map(i=>parseInt(value.slice(i,i+2),16)/255).map(channel=>channel<=.04045?channel/12.92:Math.pow((channel+.055)/1.055,2.4));return .2126*r+.7152*g+.0722*b>.36?"#071c2d":"#ffffff"};
+const THEME_KEY = "announcement-hub-theme";
 
-const roleInfo = {
-  creator:{icon:Building2,label:"Organization owner",tabLabel:"Creator / Admin",title:"Create or manage a space",welcome:"Welcome back",signInLabel:"Sign in as owner",help:"Manage people, authority, branding and delivery settings."},
-  authority:{icon:ShieldCheck,label:"Authorized leader",tabLabel:"Authority",title:"Publish within your scope",welcome:"Welcome back",signInLabel:"Sign in as authority",help:"Send announcements only to audiences assigned to you."},
-  member:{icon:GraduationCap,label:"Member, staff or student",tabLabel:"Members",title:"Open your organization inbox",welcome:"Welcome back",signInLabel:"Open your inbox",help:"Read verified announcements from your organization."},
-};
+export default function Home() {
+  const [portal, setPortal] = useState<Portal | null>(null);
+  const [viewer, setViewer] = useState<Viewer>(previewViewer);
+  const [brand, setBrand] = useState<BrandData>(demoBrand);
+  const [theme, setThemeState] = useState<ThemeMode>("system");
+  // Preview data lives in memory only; it is cleared on refresh and never sent to a server.
+  const [people, setPeople] = useState<Person[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [authorities, setAuthorities] = useState<Authority[]>([]);
+  const [announcements, setAnnouncements] = useState<PublishedAnnouncement[]>([]);
 
-function Brand({compact=false,onClick}:{compact?:boolean;onClick?:()=>void}){
-  const inner=<><span className="mark-icon"><Radio size={compact?17:20}/></span>{!compact&&<span className="mark-word">Announcement <b>Hub</b></span>}</>;
-  return onClick?<button className="brand-mark brand-button" onClick={onClick} aria-label="Go to Announcement Hub home">{inner}</button>:<Link href="/" className="brand-mark">{inner}</Link>;
-}
+  useEffect(() => {
+    let saved: string | null = null;
+    try { saved = window.localStorage.getItem(THEME_KEY); } catch { /* storage can be blocked */ }
+    if (saved !== "light" && saved !== "dark") return;
+    const timer = window.setTimeout(() => setThemeState(saved), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
-function ThemeSelect({theme,setTheme,label="Appearance"}:{theme:ThemeMode;setTheme:(theme:ThemeMode)=>void;label?:string}){
-  const modes:[ThemeMode,string,LucideIcon][]=[["system","Device",Monitor],["light","Light",Sun],["dark","Dark",Moon]];
-  return <div className="theme-select" role="group" aria-label={label}><span>{label}</span><div className="theme-options">{modes.map(([mode,name,Icon])=><button type="button" key={mode} className={theme===mode?"active":""} aria-pressed={theme===mode} title={`${name} mode`} onClick={()=>setTheme(mode)}><Icon size={15}/><span>{name}</span></button>)}</div></div>
-}
+  // Restore a signed-in session, finishing owner sign-up if it was waiting for email verification.
+  useEffect(() => {
+    if (getPublicSupabaseConfig() === null) return;
+    let active = true;
+    const restore = async () => {
+      try {
+        const { completePendingOrganization, getBrowserClient, loadOrganizationAccess, takeRequestedOrganizationCode } = await import("@/lib/supabase/browser-auth");
+        const client = getBrowserClient();
+        const { data } = await client.auth.getUser();
+        if (!data.user || !active) return;
+        const created = await completePendingOrganization(data.user, client);
+        const access = created ?? await loadOrganizationAccess(client, takeRequestedOrganizationCode());
+        if (!access || !active) return;
+        setBrand(brandFromAccess(access));
+        setViewer(viewerFromAccess(access));
+        setPortal(access.portal);
+      } catch (error) {
+        console.error("Authenticated workspace restore failed", error instanceof Error ? error.message : "unknown error");
+      }
+    };
+    void restore();
+    return () => { active = false; };
+  }, []);
 
-function Welcome({onEnter,theme,setTheme}:{onEnter:(p:Portal,brand?:BrandData)=>void;theme:ThemeMode;setTheme:(theme:ThemeMode)=>void}){
-  const [role,setRole]=useState<Portal>("creator"); const [method,setMethod]=useState<"password"|"code">("password"); const [authMode,setAuthMode]=useState<"signin"|"signup">("signin");
-  const [identifier,setIdentifier]=useState(""); const [organizationCode,setOrganizationCode]=useState(""); const [password,setPassword]=useState(""); const [confirmPassword,setConfirmPassword]=useState(""); const [fullName,setFullName]=useState(""); const [organizationName,setOrganizationName]=useState(""); const [formError,setFormError]=useState(""); const [formNotice,setFormNotice]=useState(""); const [showPassword,setShowPassword]=useState(false); const [authBusy,setAuthBusy]=useState(false); const [recoveryMode,setRecoveryMode]=useState(false);
-  const [captchaToken,setCaptchaToken]=useState(""); const captchaRef=useRef<TurnstileInstance>(undefined);
-  const current=roleInfo[role]; const Icon=current.icon;
-  const backendReady=getPublicSupabaseConfig()!==null;
-  const turnstileSiteKey=process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-  const resetCaptcha=()=>{setCaptchaToken("");captchaRef.current?.reset()};
-  const requireCaptcha=()=>{if(turnstileSiteKey&&!captchaToken){setFormError("Complete the security check before continuing.");return false}return true};
-  useEffect(()=>{const timer=window.setTimeout(()=>{const query=new URLSearchParams(window.location.search);setRecoveryMode(query.get("recovery")==="1");const authError=query.get("auth_error");if(authError)setFormError(authError==="missing_code"?"The sign-in link is incomplete. Request a new secure link.":"The sign-in link could not be verified. Request a new link and try again.")},0);return()=>window.clearTimeout(timer)},[]);
-  const unavailable=(name:string)=>setFormError(`${name} requires a configured identity service and is not active in this local prototype.`);
-  const enterAccess=(access:OrganizationAccess)=>onEnter(access.portal,brandFromAccess(access));
-  const validateOwnerSetup=()=>{if(fullName.trim().length<2){setFormError("Enter your full name.");return false}if(organizationName.trim().length<2){setFormError("Enter your organization name.");return false}if(normalizeOrganizationCode(organizationCode).length<4){setFormError("Use an organization code with at least four letters or numbers.");return false}return true};
-  const continueWithOrganization=async()=>{
-    setFormError("");setFormNotice("");
-    if(!backendReady)return unavailable(authMode==="signup"?"Account creation":method==="password"?"Password sign-in":"One-time-code sign-in");
-    if(recoveryMode){
-      if(password.length<15){setFormError("Use a new password with at least 15 characters.");return}
-      if(password!==confirmPassword){setFormError("The two passwords do not match.");return}
-      setAuthBusy(true);
-      try{const {getBrowserClient}=await import("@/lib/supabase/browser-auth");const {error}=await getBrowserClient().auth.updateUser({password});if(error)throw error;setFormNotice("Your password has been updated. You can continue to your organization space.");setRecoveryMode(false);window.history.replaceState(null,"",window.location.pathname)}catch(error){setFormError(error instanceof Error?error.message:"The password could not be updated.")}finally{setAuthBusy(false)}
-      return;
+  const setTheme = (value: ThemeMode) => {
+    setThemeState(value);
+    try { window.localStorage.setItem(THEME_KEY, value); } catch { /* storage can be blocked */ }
+  };
+
+  const enterPortal = (next: Portal, nextBrand?: BrandData, nextViewer?: Viewer) => {
+    if (nextBrand) setBrand(nextBrand);
+    setViewer(nextViewer ?? previewViewer);
+    setPortal(next);
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
+  };
+
+  const exitPortal = async () => {
+    if (viewer.signedIn && getPublicSupabaseConfig()) {
+      const { getBrowserClient } = await import("@/lib/supabase/browser-auth");
+      await getBrowserClient().auth.signOut();
     }
-    if(authMode==="signup"&&!validateOwnerSetup())return;
-    if(!requireCaptcha())return;
-    if(authMode==="signup"&&!identifier.includes("@")){setFormError("Use a valid email address to create the owner account.");return}
-    if(authMode==="signin"&&role!=="creator"&&!organizationCode.trim()){setFormError("Enter the organization code supplied by your administrator.");return}
-    if(!identifier.trim()){setFormError("Enter your approved email address or phone number.");return}
-    if(method==="password"&&password.length<(authMode==="signup"?15:1)){setFormError(authMode==="signup"?"Create a password with at least 15 characters.":"Enter your password, or choose a one-time code.");return}
-    setAuthBusy(true);
-    try{
-      const {completePendingOrganization,getBrowserClient,loadOrganizationAccess,savePendingOrganization,saveRequestedOrganizationCode}=await import("@/lib/supabase/browser-auth");
-      const client=getBrowserClient();
-      if(authMode==="signup"){
-        savePendingOrganization({fullName:fullName.trim(),name:organizationName.trim(),code:organizationCode});
-        const {data,error}=await client.auth.signUp({email:identifier.trim(),password,options:{data:{full_name:fullName.trim()},emailRedirectTo:`${window.location.origin}/auth/callback`,captchaToken:captchaToken||undefined}});
-        if(error)throw error;
-        if(data.session&&data.user){const access=await completePendingOrganization(data.user,client);if(access)return enterAccess(access)}
-        setFormNotice("Check your email to verify the owner account. Your organization space will be created after verification.");
-        return;
-      }
-      if(method==="code"){
-        const value=identifier.trim();
-        if(role!=="creator")saveRequestedOrganizationCode(organizationCode);
-        const credentials=value.startsWith("+")?{phone:value,options:{shouldCreateUser:false,captchaToken:captchaToken||undefined}}:{email:value,options:{shouldCreateUser:false,emailRedirectTo:`${window.location.origin}/auth/callback`,captchaToken:captchaToken||undefined}};
-        const {error}=await client.auth.signInWithOtp(credentials);
-        if(error)throw error;
-        setFormNotice(value.startsWith("+")?"A sign-in code was requested for that phone number.":"Check your email for the secure sign-in link.");
-        return;
-      }
-      const value=identifier.trim();
-      const options={captchaToken:captchaToken||undefined};
-      const {error}=await client.auth.signInWithPassword(value.startsWith("+")?{phone:value,password,options}:{email:value,password,options});
-      if(error)throw error;
-      const access=await loadOrganizationAccess(client,role==="creator"?undefined:organizationCode);
-      if(!access){await client.auth.signOut();throw new Error("No active membership was found for that organization.")}
-      enterAccess(access);
-    }catch(error){setFormError(error instanceof Error?error.message:"Authentication could not be completed.")}finally{setAuthBusy(false);resetCaptcha()}
+    setBrand(demoBrand);
+    setViewer(previewViewer);
+    setPortal(null);
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
   };
-  const continueWithGoogle=async()=>{
-    setFormError("");setFormNotice("");
-    if(!backendReady)return unavailable("Google sign-in");
-    if(authMode==="signup"&&!validateOwnerSetup())return;
-    const {getBrowserClient,savePendingOrganization,saveRequestedOrganizationCode}=await import("@/lib/supabase/browser-auth");
-    if(authMode==="signup")savePendingOrganization({fullName:fullName.trim(),name:organizationName.trim(),code:organizationCode});
-    else if(role!=="creator")saveRequestedOrganizationCode(organizationCode);
-    setAuthBusy(true);
-    const {error}=await getBrowserClient().auth.signInWithOAuth({provider:"google",options:{redirectTo:`${window.location.origin}/auth/callback`}});
-    if(error){setFormError(error.message);setAuthBusy(false)}
-  };
-  const recoverPassword=async()=>{
-    setFormError("");setFormNotice("");
-    if(!backendReady)return unavailable("Password recovery");
-    if(!identifier.includes("@")){setFormError("Enter your email address before requesting a password reset.");return}
-    if(!requireCaptcha())return;
-    const {getBrowserClient}=await import("@/lib/supabase/browser-auth");
-    setAuthBusy(true);const {error}=await getBrowserClient().auth.resetPasswordForEmail(identifier.trim(),{redirectTo:`${window.location.origin}/auth/callback?next=/?recovery=1`,captchaToken:captchaToken||undefined});setAuthBusy(false);resetCaptcha();
-    if(error)setFormError(error.message);else setFormNotice("Check your email for the password reset link.");
-  };
-  return <main className="welcome-shell" data-theme={theme}><a className="skip-link" href="#access-panel">Skip to sign in</a>
-    <nav className="welcome-nav"><Brand/><div className="welcome-controls"><span>{backendReady?"Secure development access":"Prototype access review"}</span><ThemeSelect theme={theme} setTheme={setTheme} label="Colour mode"/></div></nav>
-    <section className="welcome-intro"><p className="eyebrow">{backendReady?"Announcement Hub":"Announcement Hub prototype"}</p><h1>Official messages for your organization.</h1><p>{backendReady?"Sign in with the connected identity service, or use a preview role to inspect the interface without creating real organization data.":"Choose a role to inspect its workflow. Production sign-in remains disabled until a verified identity service is connected."}</p></section>
-    <section className="entry-layout">
-      <div className="role-list" aria-label="Choose your role">{(Object.keys(roleInfo) as Portal[]).map(id=>{const r=roleInfo[id],I=r.icon;return <button key={id} type="button" className={`role-row ${role===id?"active":""}`} aria-pressed={role===id} onClick={()=>{setRole(id);if(id!=="creator")setAuthMode("signin");setFormError("");setFormNotice("")}}><span className="role-icon"><I size={20}/></span><span className="role-tab-label">{r.tabLabel}</span><span className="role-copy"><small>{r.label}</small><strong>{r.title}</strong><em>{r.help}</em></span><ArrowRight size={18}/></button>})}</div>
-      <section className="access-panel" id="access-panel">
-        {role==="creator"&&!recoveryMode&&<div className="auth-mode-tabs" role="group" aria-label="Owner access"><button type="button" className={authMode==="signin"?"active":""} aria-pressed={authMode==="signin"} onClick={()=>{setAuthMode("signin");setFormError("");setFormNotice("")}}>Sign in</button><button type="button" className={authMode==="signup"?"active":""} aria-pressed={authMode==="signup"} onClick={()=>{setAuthMode("signup");setMethod("password");setFormError("");setFormNotice("")}}>Create a space</button></div>}
-        <div className="access-heading"><span className="access-icon"><Icon size={22}/></span><div><p>{recoveryMode?"Account recovery":current.label}</p><h2>{recoveryMode?"Set a new password":authMode==="signup"?"Create your space":current.welcome}</h2><span className="access-subtitle">{recoveryMode?"Choose a new password for your verified account.":authMode==="signup"?"Verify the owner account, then configure your organization.":role==="creator"?"Sign in to manage your organization’s space.":role==="authority"?"Sign in to publish within your assigned scope.":"Sign in to read verified organization updates."}</span></div></div>
-        {!recoveryMode&&<><button type="button" className="oauth-button" disabled={authBusy} onClick={continueWithGoogle}><span>G</span> Continue with Google</button><div className="divider"><span>or use organization access</span></div></>}
-        {!recoveryMode&&authMode==="signup"&&<><label><span>Full name</span><input value={fullName} onChange={event=>setFullName(event.target.value)} aria-label="Full name" autoComplete="name"/></label><label><span>Organization name</span><input value={organizationName} onChange={event=>setOrganizationName(event.target.value)} aria-label="Organization name" autoComplete="organization"/></label></>}
-        {!recoveryMode&&(role!=="creator"||authMode==="signup")&&<label><span>Organization code</span><input value={organizationCode} onChange={event=>setOrganizationCode(normalizeOrganizationCode(event.target.value))} aria-label="Organization code" autoComplete="off"/></label>}
-        {!recoveryMode&&<label><span>{authMode==="signup"?"Owner email address":"Email address or phone number"}</span><input value={identifier} onChange={event=>setIdentifier(event.target.value)} aria-label={authMode==="signup"?"Owner email address":"Email address or phone number"} autoComplete="username" inputMode={authMode==="signup"?"email":"text"}/></label>}
-        {method==="password"&&<label><span>{recoveryMode?"New password":"Password"}</span><span className="password-field"><input value={password} onChange={event=>setPassword(event.target.value)} type={showPassword?"text":"password"} aria-label={recoveryMode?"New password":"Password"} autoComplete={authMode==="signup"||recoveryMode?"new-password":"current-password"}/><button type="button" aria-label={showPassword?"Hide password":"Show password"} onClick={()=>setShowPassword(value=>!value)}>{showPassword?<EyeOff size={18}/>:<Eye size={18}/>}</button></span></label>}
-        {recoveryMode&&<label><span>Confirm new password</span><input value={confirmPassword} onChange={event=>setConfirmPassword(event.target.value)} type={showPassword?"text":"password"} aria-label="Confirm new password" autoComplete="new-password"/></label>}
-        {(authMode==="signup"||recoveryMode)&&<p className="field-help">Use at least 15 characters. Announcement Hub never creates passwords from names, phone numbers or organization codes.</p>}
-        {!recoveryMode&&authMode==="signin"&&method==="password"&&<div className="access-options single"><button type="button" onClick={recoverPassword}>Forgot password?</button></div>}
-        {!recoveryMode&&turnstileSiteKey&&<div className="captcha-field"><Turnstile ref={captchaRef} siteKey={turnstileSiteKey} options={{theme:"auto",size:"flexible",action:authMode==="signup"?"owner_signup":"sign_in"}} onSuccess={setCaptchaToken} onExpire={()=>setCaptchaToken("")} onError={()=>{setCaptchaToken("");setFormError("The security check could not be completed. Please try again.")}}/></div>}
-        {formError&&<p className="inline-error" role="alert"><CircleAlert size={16}/>{formError}</p>}
-        {formNotice&&<p className="inline-success" role="status"><Check size={16}/>{formNotice}</p>}
-        <button className="primary-action" disabled={authBusy} onClick={continueWithOrganization}>{authBusy?"Please wait…":recoveryMode?"Update password":authMode==="signup"?"Create owner account":method==="password"?current.signInLabel:"Send one-time code"}{!authBusy&&<ArrowRight size={17}/>}</button>
-        {!recoveryMode&&authMode==="signin"&&<button className="text-action" onClick={()=>{setMethod(method==="password"?"code":"password");setFormError("");setFormNotice("")}}><KeyRound size={15}/>{method==="password"?"Use a one-time code":"Use a password instead"}</button>}
-        {!recoveryMode&&<p className="access-note">{authMode==="signup"?"Google account creation still requires a verified identity and a unique organization code.":"Google access works only when the verified account has an active organization membership."}</p>}
-        <div className="prototype-access"><p><strong>{backendReady?"Secure access available":"Prototype preview"}</strong> {backendReady?"uses the configured Supabase project. Preview mode remains separate and contains no real organization data.":"skips authentication and contains no real organization data."}</p><button type="button" className="secondary" onClick={()=>onEnter(role)}>Preview {current.label.toLowerCase()} portal</button></div>
-      </section>
-    </section>
-    <footer className="site-footer"><span>© {new Date().getFullYear()} Announcement Hub</span><nav><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></nav></footer>
-  </main>;
+
+  if (!portal) return <Welcome onEnter={enterPortal} theme={theme} setTheme={setTheme} />;
+  return (
+    <Workspace
+      portal={portal}
+      viewer={viewer}
+      onExit={exitPortal}
+      brand={brand}
+      setBrand={setBrand}
+      people={people}
+      setPeople={setPeople}
+      groups={groups}
+      setGroups={setGroups}
+      authorities={authorities}
+      setAuthorities={setAuthorities}
+      announcements={announcements}
+      setAnnouncements={setAnnouncements}
+      theme={theme}
+      setTheme={setTheme}
+    />
+  );
 }
-
-const creatorNav=[
-  ["overview","Overview",Inbox],["announcements","Announcements",Send],["people","People",Users],["authorities","Authorities",ShieldCheck],["groups","Groups",Building2],["delivery","Delivery",MessageSquareText],["billing","Credits and billing",WalletCards],["branding","Branding",Palette]
-] as const;
-const authorityNav=[["inbox","Overview",Inbox],["compose","Create announcement",Send],["history","Sent history",History]] as const;
-const memberNav=[["inbox","Inbox",Inbox],["history","History",History],["preferences","Preferences",Settings]] as const;
-
-function MobileWorkspaceChrome({portal,view,setView,onMenu,brand}:{portal:Portal;view:string;setView:(view:string)=>void;onMenu:()=>void;brand:BrandData}){
-  const items=portal==="creator"?creatorNav:portal==="authority"?authorityNav:memberNav;
-  const primaryItems=portal==="creator"?items.slice(0,3):items;
-  const home=items[0][0];
-  return <>
-    <header className="mobile-app-bar">
-      <button type="button" className="mobile-org-button" onClick={()=>setView(home)} aria-label={`Open ${brand.name} ${items[0][1].toLowerCase()}`}>
-        <span className="org-avatar">{brand.logo?<img src={brand.logo} alt=""/>:initials(brand.name)}</span>
-        <span><strong>{brand.name}</strong><small>{portal==="creator"?"Owner workspace":portal==="authority"?"Leader workspace":"Organization inbox"}</small></span>
-      </button>
-    </header>
-    <nav className="mobile-tab-bar" aria-label="Primary workspace navigation">
-      {primaryItems.map(([id,label,Icon])=>{
-        const selected=view===id||(portal==="creator"&&view==="compose"&&id==="announcements");
-        return <button type="button" key={id} className={selected?"active":""} onClick={()=>setView(id)} aria-current={selected?"page":undefined}><Icon size={20}/><span>{label}</span></button>
-      })}
-      {portal==="creator"&&<button type="button" onClick={onMenu}><Menu size={20}/><span>More</span></button>}
-    </nav>
-  </>;
-}
-
-function Sidebar({portal,view,setView,onExit,mobileOpen,setMobileOpen,brand,theme,setTheme}:{portal:Portal;view:string;setView:(v:string)=>void;onExit:()=>void;mobileOpen:boolean;setMobileOpen:(v:boolean)=>void;brand:BrandData;theme:ThemeMode;setTheme:(theme:ThemeMode)=>void}){
-  const items=portal==="creator"?creatorNav:portal==="authority"?authorityNav:memberNav;
-  return <aside className={`sidebar ${mobileOpen?"mobile-open":""}`}><div className="sidebar-brand"><Brand compact onClick={()=>setView(items[0][0])}/><span>Announcement Hub</span><button type="button" className="mobile-close" onClick={()=>setMobileOpen(false)} aria-label="Close menu"><X size={20}/></button></div><div className="org-identity"><span className="org-avatar">{brand.logo?<img src={brand.logo} alt={`${brand.name} logo`}/>:initials(brand.name)}</span><span><strong>{brand.name}</strong><small>{brand.code}</small></span></div><nav aria-label="Workspace navigation"><p>{portal.toUpperCase()} WORKSPACE</p>{items.map(([id,label,I])=><button type="button" key={id} className={`nav-item ${view===id?"active":""}`} onClick={()=>{setView(id);setMobileOpen(false)}} aria-current={view===id?"page":undefined}><I size={18}/><span>{label}</span></button>)}</nav><div className="sidebar-bottom"><ThemeSelect theme={theme} setTheme={setTheme}/><button type="button" className="switch-button" onClick={onExit}><ArrowLeft size={17}/> Switch role</button><div className="user-row"><span>DP</span><div><strong>Demo person</strong><small>{portal==="creator"?"Space creator":portal==="authority"?"Authorized leader":"Member"}</small></div>{portal==="member"&&<button type="button" aria-label="Open preferences" onClick={()=>setView("preferences")}><Settings size={17}/></button>}</div></div></aside>;
-}
-
-function Header({title,description,onMenu,action}:{title:string;description:string;onMenu:()=>void;action?:React.ReactNode}){return <header className="page-header"><button type="button" className="mobile-menu" onClick={onMenu} aria-label="Open menu"><Menu size={21}/></button><div><p>ORGANIZATION SPACE</p><h1>{title}</h1><span>{description}</span></div>{action&&<div className="header-actions">{action}</div>}</header>}
-function EmptyState({icon:Icon,title,body,action}:{icon:LucideIcon;title:string;body:string;action?:React.ReactNode}){return <section className="empty-state"><span><Icon size={24}/></span><h2>{title}</h2><p>{body}</p>{action}</section>}
-function AnnouncementRecords({items,emptyTitle,emptyBody}:{items:PublishedAnnouncement[];emptyTitle:string;emptyBody:string}){return items.length?<section className="data-panel published-list"><div className="data-head"><div><h2>Published announcements</h2><p>Preview records from this browser session</p></div><span>{items.length} total</span></div>{items.map(item=><article key={item.id}><span className={`priority-marker ${item.priority}`}>{item.priority}</span><div><h3>{item.title}</h3><p>{item.body}</p><footer><span>{item.audienceLabel}</span><span>{item.recipientIds.length} recipients</span><span>{item.sender}</span><time dateTime={item.sentAt}>{new Date(item.sentAt).toLocaleString()}</time></footer></div></article>)}</section>:<EmptyState icon={Inbox} title={emptyTitle} body={emptyBody}/>}
-
-function CreatorDashboard({view,setView,setModal,toast,people,groups,authorities,brand,announcements,onPublish}:{view:CreatorView;setView:(v:CreatorView)=>void;setModal:(m:Modal)=>void;toast:(s:string)=>void;people:Person[];groups:Group[];authorities:Authority[];brand:BrandData;announcements:PublishedAnnouncement[];onPublish:(draft:AnnouncementDraft)=>void}){
-  if(view==="overview")return <><Header title="Overview" description="Set up the organization before inviting members" onMenu={()=>{}}/><section className="setup-card setup-tracker"><div className="setup-summary"><span>SPACE SETUP</span><h2>Complete your organization setup</h2><p>Connect real member data before activity and delivery reporting are shown.</p><div className="setup-progress"><span>1 of 4 complete</span><div role="progressbar" aria-label="Organization setup progress" aria-valuemin={0} aria-valuemax={4} aria-valuenow={1}><i/></div></div></div><Accordion type="single" defaultValue="branding" collapsible className="setup-accordion"><AccordionItem value="created" className="setup-step done"><AccordionTrigger><span className="step-number"><Check size={14}/></span><span><strong>Space created</strong><small>{brand.name}</small></span></AccordionTrigger><AccordionContent><p>Your organization space and code are ready for configuration.</p></AccordionContent></AccordionItem><AccordionItem value="branding" className="setup-step"><AccordionTrigger><span className="step-number">2</span><span><strong>Add logo and brand colors</strong><small>Make the space recognizable</small></span></AccordionTrigger><AccordionContent><p>Set the two-color palette and circular logo members will see.</p><button className="secondary" onClick={()=>setView("branding")}>Open branding</button></AccordionContent></AccordionItem><AccordionItem value="people" className="setup-step"><AccordionTrigger><span className="step-number">3</span><span><strong>Import organization members</strong><small>{people.length?`${people.length} preview records added`:"No member records connected yet"}</small></span></AccordionTrigger><AccordionContent><p>Add people individually, paste rows or upload a CSV file.</p><button className="secondary" onClick={()=>setView("people")}>Open people</button></AccordionContent></AccordionItem><AccordionItem value="authority" className="setup-step"><AccordionTrigger><span className="step-number">4</span><span><strong>Assign announcement authority</strong><small>Define who can contact each audience</small></span></AccordionTrigger><AccordionContent><p>Create groups first, then give leaders the minimum audience scope they need.</p><button className="secondary" onClick={()=>setView("authorities")}>Open authorities</button></AccordionContent></AccordionItem></Accordion></section><section className="honest-grid"><article><Users size={20}/><strong>Member activity</strong><p>Available after members join and activity tracking begins.</p></article><article><MessageSquareText size={20}/><strong>Delivery reporting</strong><p>Available after a messaging provider is connected.</p></article></section></>;
-  if(view==="compose")return <><Header title="Create announcement" description="Choose exactly who should receive this official update" onMenu={()=>{}}/><AudienceComposer people={people} groups={groups} allowOrganization organizationName={brand.name} onCancel={()=>setView("announcements")} onPublish={onPublish}/></>;
-  if(view==="announcements")return <><Header title="Announcements" description="Publish to the whole organization, selected groups or specific people" onMenu={()=>{}} action={<button type="button" className="primary-action" onClick={()=>people.length?setView("compose"):toast("Import at least one member before creating an announcement.")}><Plus size={17}/> New announcement</button>}/><AnnouncementRecords items={announcements} emptyTitle="No announcements published" emptyBody="Create an announcement, build its audience and review the resolved recipients before publishing."/></>;
-  if(view==="people")return <><Header title="People" description="Import and review organization members" onMenu={()=>{}} action={<button type="button" className="primary-action" onClick={()=>setModal("people")}><UserPlus size={17}/> Add people</button>}/>{people.length?<section className="data-panel member-directory"><div className="data-head"><div><h2>Member directory</h2><p>Preview records added during this session</p></div><span>{people.length} {people.length===1?"person":"people"}</span></div><Table><TableCaption className="sr-only">Preview organization members</TableCaption><TableHeader><TableRow><TableHead>Member</TableHead><TableHead>Contact</TableHead><TableHead>Group</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{people.map(p=><TableRow key={p.id}><TableCell><div className="member-name"><Avatar size="sm"><AvatarFallback>{initials(p.name)}</AvatarFallback></Avatar><strong>{p.name}</strong></div></TableCell><TableCell>{p.email||p.phone}</TableCell><TableCell>{p.group||"Unassigned"}</TableCell><TableCell><span className="record-status"><Check size={13}/> Preview record</span></TableCell></TableRow>)}</TableBody></Table></section>:<EmptyState icon={Users} title="No members have been imported" body="Add one person, paste comma-separated rows, or upload a CSV. Directory sync needs a secure backend." action={<button type="button" className="primary-action" onClick={()=>setModal("people")}>Choose an input method</button>}/>}</>;
-  if(view==="authorities")return <><Header title="Authorities" description="Assign hierarchy levels and audience scope" onMenu={()=>{}} action={<button type="button" className="primary-action" onClick={()=>people.length&&groups.length?setModal("authority"):toast("Add at least one person and one group first.")}><Plus size={17}/> Assign authority</button>}/>{authorities.length?<section className="data-panel"><div className="data-head"><h2>Preview assignments</h2><span>{authorities.length} total</span></div>{authorities.map(a=><div className="authority-card" key={a.id}><ShieldCheck size={19}/><div><strong>{people.find(p=>p.id===a.personId)?.name}</strong><p>{a.level} · {a.scope}</p></div></div>)}</section>:<EmptyState icon={ShieldCheck} title="No authority assignments yet" body="Import members and create groups first, then assign a hierarchy level and permitted audience."/>}</>;
-  if(view==="groups")return <><Header title="Groups" description="Create departments, offices, courses and classes" onMenu={()=>{}} action={<button type="button" className="primary-action" onClick={()=>setModal("group")}><Plus size={17}/> Add group</button>}/>{groups.length?<section className="data-panel"><div className="data-head"><h2>Audience groups</h2><span>{groups.length} total</span></div>{groups.map(g=><div className="authority-card" key={g.id}><Building2 size={19}/><div><strong>{g.name}</strong><p>{g.type}</p></div></div>)}</section>:<EmptyState icon={Building2} title="No audience groups yet" body="Create a department, office, course, class or project."/>}</>;
-  if(view==="delivery")return <><Header title="Delivery" description="Provider-confirmed channel outcomes" onMenu={()=>{}}/><EmptyState icon={MessageSquareText} title="No delivery records" body="Sent, delivered, read and failed statuses will appear after a messaging provider is connected and the first announcement is sent."/></>;
-  if(view==="billing")return <><Header title="Credits and billing" description="Control SMS fallback spending" onMenu={()=>{}}/><section className="billing-explainer"><WalletCards size={24}/><h2>Hubtel setup pending</h2><p>The protected Hubtel connection and delivery ledger are installed. Real sending stays disabled until server credentials, an approved sender ID and an organization spending limit are configured. Only provider-confirmed charges will be treated as actual cost.</p><button className="primary-action" onClick={()=>toast("Next: activate Hubtel, approve a sender ID, then add the credentials to the secure server environment.")}>Review next step</button></section></>;
-  return <><Header title="Branding" description="Apply your organization identity to every member experience" onMenu={()=>{}}/><section className="brand-settings"><div className="brand-preview"><span className="org-avatar large">{brand.logo?<img src={brand.logo} alt={`${brand.name} logo`}/>:initials(brand.name)}</span><strong>{brand.name}</strong><small>{brand.code}</small><span className="brand-swatches" aria-label="Selected brand colors"><i style={{background:brand.color}}/><i style={{background:brand.secondaryColor}}/></span></div><div><h2>Organization appearance</h2><p>Choose two brand colors and a circular logo. The colors are blended into one consistent gradient, then softened for backgrounds and darkened for controls so the entire workspace stays recognizable and readable.</p><button type="button" className="primary-action" onClick={()=>setModal("branding")}><Palette size={17}/> Customize appearance</button></div></section></>;
-}
-
-function AuthorityDashboard({view,setView,notify,groups,people,announcements,onPublish,organizationName="Demo University"}:{view:AuthorityView;setView:(v:AuthorityView)=>void;notify:(message:string)=>void;groups:Group[];people:Person[];announcements:PublishedAnnouncement[];onPublish:(draft:AnnouncementDraft)=>void;organizationName?:string}){
-  const scopedPeople=people.filter(person=>groups.some(group=>group.name===person.group));
-  if(view==="compose")return <><Header title="Create announcement" description="Only creator-assigned audiences are available" onMenu={()=>{}}/><AudienceComposer people={scopedPeople} groups={groups} allowOrganization={false} organizationName={organizationName} onCancel={()=>setView("inbox")} onPublish={onPublish}/></>;
-  if(view==="history")return <><Header title="Sent history" description="Announcements sent from your account" onMenu={()=>{}}/><AnnouncementRecords items={announcements.filter(item=>item.sender==="Authorized leader")} emptyTitle="No announcements sent" emptyBody="Your sent announcements and verified delivery outcomes will appear here."/></>;
-  return <><Header title="Authority overview" description="Your publishing access is limited to assigned audiences" onMenu={()=>{}} action={<button type="button" className="primary-action" onClick={()=>groups.length?setView("compose"):notify("Create a group in the owner portal before composing.")}><Plus size={17}/> Create announcement</button>}/><section className="scope-card"><ShieldCheck size={22}/><div><span>PREVIEW SCOPE</span><h2>{groups.length?groups.map(g=>g.name).join(", "):"No audience assigned"}</h2><p>The production server must re-check permission scope for every send. Hiding options in the interface is not sufficient authorization.</p></div></section><EmptyState icon={Inbox} title="No drafts or recent sends" body="Create a group in the owner portal to test scoped selection."/></>;
-}
-
-function MemberDashboard({view,theme,setTheme,announcements}:{view:MemberView;theme:ThemeMode;setTheme:(theme:ThemeMode)=>void;announcements:PublishedAnnouncement[]}){
-  if(view==="preferences")return <><Header title="Preferences" description="Choose appearance and notification channels" onMenu={()=>{}}/><section className="preference-list"><label><span><Sun size={19}/><strong>Appearance</strong></span><select aria-label="Appearance" value={theme} onChange={e=>setTheme(e.target.value as ThemeMode)}><option value="system">Use device setting</option><option value="light">Light</option><option value="dark">Dark</option></select></label><label><span><Bell size={19}/><strong>Notifications</strong></span><select aria-label="Notification channel"><option>In-app, WhatsApp and SMS fallback</option><option>In-app and SMS fallback</option><option>In-app only</option></select></label></section></>;
-  if(view==="history")return <><Header title="Announcement history" description="Previously read and archived messages" onMenu={()=>{}}/><EmptyState icon={History} title="No announcement history" body="Announcements you read or archive will appear here with the sender, department, date and time."/></>;
-  return <><Header title="Inbox" description="Official announcements from your organization" onMenu={()=>{}}/><AnnouncementRecords items={announcements} emptyTitle="No announcements" emptyBody="New authorized announcements will appear here with the sender, group, date, time and priority."/></>;
-}
-
-function ActionModal({type,close,commit,people,groups,brand,error}:{type:Exclude<Modal,null>;close:()=>void;commit:(value:Person|Group|Authority|BrandData|Person[])=>Promise<void>;people:Person[];groups:Group[];brand:BrandData;error:(s:string)=>void}){
-  const ref=useRef<HTMLElement>(null),[method,setMethod]=useState("individual"),[name,setName]=useState(""),[email,setEmail]=useState(""),[phone,setPhone]=useState(""),[group,setGroup]=useState(""),[raw,setRaw]=useState(""),[kind,setKind]=useState("Department"),[personId,setPersonId]=useState(people[0]?.id||""),[level,setLevel]=useState("Department head"),[scope,setScope]=useState(groups[0]?.name||""),[draft,setDraft]=useState(brand),[message,setMessage]=useState(""),[submitting,setSubmitting]=useState(false);
-  useEffect(()=>{const old=document.activeElement as HTMLElement|null,dialog=ref.current;dialog?.querySelector<HTMLElement>("button,input,select,textarea")?.focus();const key=(e:KeyboardEvent)=>{if(e.key==="Escape")close();if(e.key==="Tab"&&dialog){const items=[...dialog.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled])')];if(!items.length)return;const first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}};document.addEventListener("keydown",key);return()=>{document.removeEventListener("keydown",key);old?.focus()}},[close]);
-  const fail=(s:string)=>{setMessage(s);error(s)}, parse=()=>raw.split(/\r?\n/).filter(Boolean).map((line,i)=>{const [n="",e="",p="",g=""]=line.split(",").map(v=>v.trim());if(!n||(!e&&!p)||![n,e,p,g].every(safeCell))throw Error(`Row ${i+1} needs a name, email or phone, and safe text.`);return{id:crypto.randomUUID(),name:n,email:e,phone:p,group:g}});
-  const chooseFile=async(e:React.ChangeEvent<HTMLInputElement>)=>{const f=e.target.files?.[0];if(!f)return;if(!f.name.toLowerCase().endsWith(".csv")||f.size>1048576)return fail("Use a CSV file no larger than 1 MB.");setRaw(await f.text())};
-  const chooseLogo=(e:React.ChangeEvent<HTMLInputElement>)=>{const f=e.target.files?.[0];if(!f)return;if(!["image/png","image/jpeg"].includes(f.type)||f.size>1048576)return fail("Use a PNG or JPEG no larger than 1 MB.");const r=new FileReader();r.onload=()=>setDraft({...draft,logo:String(r.result)});r.readAsDataURL(f)};
-  const submit=async()=>{if(submitting)return;setSubmitting(true);try{if(type==="people"){if(method==="directory")return fail("Directory sync needs administrator consent and a secure backend; it cannot be simulated locally.");if(method==="individual"){if(!name||(!email&&!phone)||![name,email,phone,group].every(safeCell))return fail("Enter a safe name and either email or phone.");await commit({id:crypto.randomUUID(),name,email,phone,group})}else{if(!raw.trim())return fail("Add at least one comma-separated row.");await commit(parse())}}else if(type==="group"){if(!name||!safeCell(name))return fail("Enter a safe group name.");await commit({id:crypto.randomUUID(),name,type:kind})}else if(type==="authority"){if(!personId||!scope)return fail("Choose a member and audience.");await commit({id:crypto.randomUUID(),personId,level,scope})}else{if(!draft.name||!isValidOrganizationCode(draft.code)||![draft.color,draft.secondaryColor].every(value=>/^#[0-9a-f]{6}$/i.test(value)))return fail("Enter a valid name, a 4 to 32 character organization code, and two colors.");await commit({...draft,code:normalizeOrganizationCode(draft.code)})}close()}catch(e){fail(e instanceof Error?e.message:"The input could not be processed.")}finally{setSubmitting(false)}};
-  const title={people:"Add people",authority:"Assign authority",group:"Add group",announcement:"Create announcement",branding:"Customize appearance"}[type];
-  const submitLabel={people:"Add people",authority:"Assign authority",group:"Add group",announcement:"Create announcement",branding:"Apply appearance"}[type];
-  return <div className="modal-backdrop" onMouseDown={close}><section ref={ref} className="composer" role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={e=>e.stopPropagation()}><header><div><p>ORGANIZATION SETUP</p><h2 id="modal-title">{title}</h2></div><button type="button" className="close-button" onClick={close} aria-label="Close dialog"><X size={20}/></button></header>
-  {type==="people"&&<><div className="method-tabs">{[["individual","One person"],["csv","CSV file"],["paste","Paste rows"],["directory","Directory"]].map(([id,label])=><button type="button" key={id} className={method===id?"active":""} onClick={()=>setMethod(id)}>{label}</button>)}</div>{method==="individual"&&<div className="form-grid"><label><span>Full name *</span><input value={name} onChange={e=>setName(e.target.value)}/></label><label><span>Email</span><input type="email" value={email} onChange={e=>setEmail(e.target.value)}/></label><label><span>Phone</span><input type="tel" value={phone} onChange={e=>setPhone(e.target.value)}/></label><label><span>Group</span><input value={group} onChange={e=>setGroup(e.target.value)}/></label></div>}{method==="csv"&&<label><span>CSV file *</span><input type="file" accept=".csv,text/csv" onChange={chooseFile}/><small>Maximum 1 MB. Columns: name, email, phone, group.</small></label>}{method==="paste"&&<label><span>Comma-separated rows *</span><textarea value={raw} onChange={e=>setRaw(e.target.value)} placeholder="Full name, email, phone, group"/></label>}{method==="directory"&&<p className="modal-explainer">Google Workspace and Microsoft Entra connections require administrator consent, least-privilege permissions, secure server credentials, sync logs and deprovisioning.</p>}</>}
-  {type==="group"&&<div className="form-grid"><label><span>Group name *</span><input value={name} onChange={e=>setName(e.target.value)}/></label><label><span>Type</span><select value={kind} onChange={e=>setKind(e.target.value)}><option>Department</option><option>Office</option><option>Course</option><option>Class</option><option>Project</option></select></label></div>}
-  {type==="authority"&&<div className="form-grid"><label><span>Member</span><select value={personId} onChange={e=>setPersonId(e.target.value)}>{people.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label><span>Level</span><select value={level} onChange={e=>setLevel(e.target.value)}><option>Executive</option><option>Department head</option><option>Manager</option><option>Lecturer</option></select></label><label><span>Permitted audience</span><select value={scope} onChange={e=>setScope(e.target.value)}>{groups.map(g=><option key={g.id}>{g.name}</option>)}</select></label></div>}
-  {type==="branding"&&<><p className="modal-explainer">Your two colors are blended throughout the workspace. Saved changes apply to every member portal on desktop and mobile.</p><div className="form-grid"><label><span>Organization name *</span><input value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})}/></label><label><span>Organization code *</span><input value={draft.code} onChange={e=>setDraft({...draft,code:normalizeOrganizationCode(e.target.value)})}/><small>Must be unique. Members use the updated code at their next sign-in.</small></label><label><span>Gradient start *</span><span className="color-field"><input type="color" value={draft.color} onChange={e=>setDraft({...draft,color:e.target.value})}/><output>{draft.color.toUpperCase()}</output></span></label><label><span>Gradient end *</span><span className="color-field"><input type="color" value={draft.secondaryColor} onChange={e=>setDraft({...draft,secondaryColor:e.target.value})}/><output>{draft.secondaryColor.toUpperCase()}</output></span></label><div className="gradient-sample" style={{background:`linear-gradient(125deg, ${draft.color}, ${draft.secondaryColor})`}} aria-label="Organization gradient preview"><span>Gradient preview</span></div><label className="logo-field"><span>Circular logo</span><input type="file" accept="image/png,image/jpeg" onChange={chooseLogo}/><small>PNG or JPEG, maximum 1 MB. Square images crop best.</small></label></div></>}{message&&<p className="inline-error" role="alert"><CircleAlert size={16}/>{message}</p>}<footer><button type="button" className="secondary" disabled={submitting} onClick={close}>Cancel</button><button type="button" className="primary-action" disabled={submitting} onClick={submit}>{submitting?"Saving…":submitLabel}</button></footer></section></div>}
-
-function Workspace({portal,onExit,brand,setBrand,people,setPeople,groups,setGroups,authorities,setAuthorities,announcements,setAnnouncements,theme,setTheme}:{portal:Portal;onExit:()=>void;brand:BrandData;setBrand:(b:BrandData)=>void;people:Person[];setPeople:React.Dispatch<React.SetStateAction<Person[]>>;groups:Group[];setGroups:React.Dispatch<React.SetStateAction<Group[]>>;authorities:Authority[];setAuthorities:React.Dispatch<React.SetStateAction<Authority[]>>;announcements:PublishedAnnouncement[];setAnnouncements:React.Dispatch<React.SetStateAction<PublishedAnnouncement[]>>;theme:ThemeMode;setTheme:(theme:ThemeMode)=>void}){const [creatorView,setCreatorView]=useState<CreatorView>("overview"),[authorityView,setAuthorityView]=useState<AuthorityView>("inbox"),[memberView,setMemberView]=useState<MemberView>("inbox"),[mobileOpen,setMobileOpen]=useState(false),[modal,setModal]=useState<Modal>(null),[notice,setNotice]=useState<{type:"success"|"error";text:string}|null>(null);const view=portal==="creator"?creatorView:portal==="authority"?authorityView:memberView;const setView=(next:string)=>{if(portal==="creator")setCreatorView(next as CreatorView);else if(portal==="authority")setAuthorityView(next as AuthorityView);else setMemberView(next as MemberView);window.requestAnimationFrame(()=>window.scrollTo({top:0,behavior:"auto"}))};const notify=(type:"success"|"error",text:string)=>{setNotice({type,text});window.setTimeout(()=>setNotice(null),4000)};useEffect(()=>{if(!brand.organizationId||getPublicSupabaseConfig()===null)return;let unsubscribe:(()=>void)|undefined;void import("@/lib/supabase/browser-auth").then(({getBrowserClient,subscribeToOrganizationIdentity})=>{unsubscribe=subscribeToOrganizationIdentity(getBrowserClient(),brand.organizationId!,access=>setBrand(brandFromAccess(access))) });return()=>unsubscribe?.()},[brand.organizationId,setBrand]);const commit=async(value:Person|Group|Authority|BrandData|Person[])=>{if(Array.isArray(value)){setPeople(p=>[...p,...value]);notify("success",`${value.length} preview members added.`);return}if("email" in value){setPeople(p=>[...p,value]);notify("success","Preview member added.");return}if("personId" in value){setAuthorities(a=>[...a,value]);notify("success","Preview authority assigned.");return}if("type" in value){setGroups(g=>[...g,value]);notify("success","Preview group added.");return}if(value.organizationId&&getPublicSupabaseConfig()){const {getBrowserClient,updateOrganizationIdentity}=await import("@/lib/supabase/browser-auth");const access=await updateOrganizationIdentity(getBrowserClient(),{organizationId:value.organizationId,name:value.name,code:value.code,primaryColor:value.color,secondaryColor:value.secondaryColor,logo:value.logo});setBrand(brandFromAccess(access));notify("success","Organization identity saved for every member on desktop and mobile.");return}setBrand(value);notify("success","Preview branding applied locally across all three portals.")};const publish=(draft:AnnouncementDraft)=>{const sender=portal==="creator"?"Organization owner":"Authorized leader";setAnnouncements(items=>[{...draft,id:crypto.randomUUID(),sender,sentAt:new Date().toISOString()},...items]);notify("success",`Announcement published to ${draft.recipientIds.length} preview ${draft.recipientIds.length===1?"recipient":"recipients"}.`);if(portal==="creator")setCreatorView("announcements");else setAuthorityView("history")};
-  const brandStyle={"--org-primary":brand.color,"--org-secondary":brand.secondaryColor,"--org-on-primary":readableText(brand.color),"--org-on-secondary":readableText(brand.secondaryColor)} as React.CSSProperties;
-  const authorityGroups=groups.filter(group=>group.name===authorities[0]?.scope);
-  return <main className="app-shell" data-theme={theme} style={brandStyle}><a className="skip-link" href="#workspace-content">Skip to content</a><MobileWorkspaceChrome portal={portal} view={view} setView={setView} onMenu={()=>setMobileOpen(true)} brand={brand}/><Sidebar portal={portal} view={view} setView={setView} onExit={onExit} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} brand={brand} theme={theme} setTheme={setTheme}/>{mobileOpen&&<button type="button" className="menu-backdrop" onClick={()=>setMobileOpen(false)} aria-label="Close navigation"/>}<section className="content-shell" id="workspace-content">{portal==="creator"?<CreatorDashboard view={creatorView} setView={setCreatorView} setModal={setModal} toast={s=>notify("error",s)} people={people} groups={groups} authorities={authorities} brand={brand} announcements={announcements} onPublish={publish}/>:portal==="authority"?<AuthorityDashboard view={authorityView} setView={setAuthorityView} notify={message=>notify("success",message)} groups={authorityGroups} people={people} announcements={announcements} onPublish={publish}/>:<MemberDashboard view={memberView} theme={theme} setTheme={setTheme} announcements={announcements}/>}<footer className="workspace-footer"><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><button type="button" onClick={onExit}><LogOut size={15}/> Sign out of preview</button></footer></section>{modal&&<ActionModal type={modal} close={()=>setModal(null)} commit={commit} people={people} groups={groups} brand={brand} error={s=>notify("error",s)}/>} {notice&&<div className={`toast ${notice.type}`} role={notice.type==="error"?"alert":"status"}>{notice.type==="success"?<Check size={18}/>:<CircleAlert size={18}/>}<span>{notice.text}</span><button type="button" onClick={()=>setNotice(null)} aria-label="Dismiss"><X size={15}/></button></div>}</main>}
-
-export default function Home(){const [portal,setPortal]=useState<Portal|null>(null),[brand,setBrand]=useState<BrandData>(demoBrand),[theme,setThemeState]=useState<ThemeMode>("system"),[people,setPeople]=useState<Person[]>([]),[groups,setGroups]=useState<Group[]>([]),[authorities,setAuthorities]=useState<Authority[]>([]),[announcements,setAnnouncements]=useState<PublishedAnnouncement[]>([]);useEffect(()=>{const saved=window.localStorage.getItem("announcement-hub-theme");if(saved==="light"||saved==="dark"){const timer=window.setTimeout(()=>setThemeState(saved),0);return()=>window.clearTimeout(timer)}},[]);useEffect(()=>{if(getPublicSupabaseConfig()===null)return;let active=true;const restore=async()=>{try{const {completePendingOrganization,getBrowserClient,loadOrganizationAccess,takeRequestedOrganizationCode}=await import("@/lib/supabase/browser-auth");const client=getBrowserClient();const {data}=await client.auth.getUser();if(!data.user||!active)return;const created=await completePendingOrganization(data.user,client);const access=created??await loadOrganizationAccess(client,takeRequestedOrganizationCode());if(!access||!active)return;setBrand(brandFromAccess(access));setPortal(access.portal)}catch(error){console.error("Authenticated workspace restore failed",error instanceof Error?error.message:"unknown error")}};void restore();return()=>{active=false}},[]);const setTheme=(value:ThemeMode)=>{setThemeState(value);window.localStorage.setItem("announcement-hub-theme",value)};const moveToPortal=(next:Portal|null,nextBrand?:BrandData)=>{if(nextBrand)setBrand(nextBrand);setPortal(next);window.requestAnimationFrame(()=>window.scrollTo({top:0,behavior:"auto"}))};const exitPortal=async()=>{if(getPublicSupabaseConfig()){const {getBrowserClient}=await import("@/lib/supabase/browser-auth");await getBrowserClient().auth.signOut()}setBrand(demoBrand);moveToPortal(null)};return portal?<Workspace portal={portal} onExit={exitPortal} brand={brand} setBrand={setBrand} people={people} setPeople={setPeople} groups={groups} setGroups={setGroups} authorities={authorities} setAuthorities={setAuthorities} announcements={announcements} setAnnouncements={setAnnouncements} theme={theme} setTheme={setTheme}/>:<Welcome onEnter={moveToPortal} theme={theme} setTheme={setTheme}/>}

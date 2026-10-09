@@ -1,10 +1,10 @@
 BEGIN;
-SELECT plan(14);
+SELECT plan(17);
 
 select is(
   (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity),
-  19,
-  'all 19 application tables have RLS enabled'
+  21,
+  'all 21 application tables have RLS enabled'
 );
 
 select is(
@@ -39,7 +39,7 @@ select ok(
 );
 
 select ok(
-  exists(select 1 from pg_policies where schemaname='public' and tablename='groups' and policyname='groups_owner_all') and
+  exists(select 1 from pg_policies where schemaname='public' and tablename='groups' and policyname='groups_owner_insert') and
   exists(select 1 from pg_policies where schemaname='public' and tablename='recipient_deliveries' and policyname='recipient_delivery_self_select'),
   'owner and recipient isolation policies exist'
 );
@@ -95,6 +95,28 @@ select ok(
   exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='organizations') and
   exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='organization_branding'),
   'organization identity changes are available to authenticated realtime subscribers'
+);
+
+select ok(
+  not has_table_privilege('authenticated','public.announcements','INSERT') and
+  not has_table_privilege('authenticated','public.announcements','UPDATE') and
+  not has_table_privilege('authenticated','public.announcement_audiences','INSERT') and
+  not has_table_privilege('authenticated','public.announcement_individual_audiences','INSERT') and
+  not has_table_privilege('authenticated','public.announcement_exclusions','INSERT'),
+  'announcements are written only by the authorized server route'
+);
+
+select ok(
+  exists(select 1 from information_schema.table_constraints where constraint_schema='public' and constraint_name='announcements_author_org_fk') and
+  exists(select 1 from pg_trigger where tgname='announcements_organization_immutable' and not tgisinternal),
+  'announcement authors belong to the announcement organization, which cannot change'
+);
+
+select ok(
+  exists(select 1 from information_schema.table_constraints where constraint_schema='public' and constraint_name='read_receipts_own_delivery_fk') and
+  has_column_privilege('authenticated','public.read_receipts','membership_id','INSERT') and
+  not has_column_privilege('authenticated','public.read_receipts','read_at','INSERT'),
+  'read receipts match the reader''s own delivery and cannot be backdated'
 );
 
 SELECT * FROM finish();

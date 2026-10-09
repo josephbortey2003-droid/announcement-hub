@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Building2,
@@ -25,6 +25,8 @@ export type AudiencePerson = {
 export type AudienceGroup = { id: string; name: string; type: string };
 
 export type AnnouncementDraft = {
+  /** Generated once per draft so a retried publish is recognised as the same announcement. */
+  clientRequestId: string;
   title: string;
   body: string;
   priority: "normal" | "important" | "urgent";
@@ -57,6 +59,10 @@ export function AudienceComposer({
   onPublish,
 }: AudienceComposerProps) {
   const [step, setStep] = useState<"compose" | "review">("compose");
+  const [clientRequestId] = useState(() => crypto.randomUUID());
+  const [publishing, setPublishing] = useState(false);
+  // A ref blocks repeat clicks immediately; the state only disables the button after the next render.
+  const published = useRef(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [priority, setPriority] = useState<AnnouncementDraft["priority"]>("normal");
@@ -107,7 +113,7 @@ export function AudienceComposer({
   };
 
   const review = () => {
-    if (!title.trim()) return setError("Add a short announcement title.");
+    if (title.trim().length < 2) return setError("Add a short announcement title of at least two characters.");
     if (!body.trim()) return setError("Write the announcement message.");
     if (!includesSomething) return setError("Choose at least one audience.");
     if (!recipients.length) return setError("The current choices resolve to no recipients. Add members or change the audience.");
@@ -115,20 +121,26 @@ export function AudienceComposer({
     setStep("review");
   };
 
-  const publish = () => onPublish({
-    title: title.trim(),
-    body: body.trim(),
-    priority,
-    audienceLabel,
-    audience: {
-      wholeOrganization,
-      groupIds: selectedGroups,
-      membershipIds: selectedPeople,
-      excludedMembershipIds: activeExcludedPeople,
-    },
-    recipientIds: recipients.map((person) => person.id),
-    smsFallbackMinutes: fallback === "none" ? null : Number(fallback),
-  });
+  const publish = () => {
+    if (published.current) return;
+    published.current = true;
+    setPublishing(true);
+    onPublish({
+      clientRequestId,
+      title: title.trim(),
+      body: body.trim(),
+      priority,
+      audienceLabel,
+      audience: {
+        wholeOrganization,
+        groupIds: selectedGroups,
+        membershipIds: selectedPeople,
+        excludedMembershipIds: activeExcludedPeople,
+      },
+      recipientIds: recipients.map((person) => person.id),
+      smsFallbackMinutes: fallback === "none" ? null : Number(fallback),
+    });
+  };
 
   if (step === "review") {
     return <section className="composer-page announcement-composer" aria-labelledby="review-heading">
@@ -144,7 +156,7 @@ export function AudienceComposer({
       </dl>
       <article className="message-preview"><span>MESSAGE PREVIEW</span><h3>{title}</h3><p>{body}</p></article>
       <section className="recipient-preview"><h3>Recipient check</h3><p>{recipients.slice(0, 5).map((person) => person.name).join(", ")}{recipients.length > 5 ? ` and ${recipients.length - 5} more` : ""}</p>{fallback !== "none" && missingPhone > 0 && <p className="field-warning"><CircleAlert size={16}/>{missingPhone} {missingPhone === 1 ? "recipient has" : "recipients have"} no phone number and cannot receive SMS fallback.</p>}</section>
-      <footer><button type="button" className="secondary" onClick={() => setStep("compose")}>Back</button><button type="button" className="primary-action" onClick={publish}><Send size={16}/> Publish announcement</button></footer>
+      <footer><button type="button" className="secondary" onClick={() => setStep("compose")}>Back</button><button type="button" className="primary-action" onClick={publish} disabled={publishing}><Send size={16}/> {publishing ? "Publishing…" : "Publish announcement"}</button></footer>
     </section>;
   }
 
