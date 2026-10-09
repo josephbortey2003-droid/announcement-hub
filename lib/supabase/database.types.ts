@@ -1077,6 +1077,27 @@ export type Database = {
         }
         Returns: Json
       }
+      mark_announcement_read: {
+        Args: {
+          target_delivery: string
+        }
+        Returns: string
+      }
+      my_announcements: {
+        Args: {
+          target_organization: string
+        }
+        Returns: {
+          announcement_id: string
+          author_role: string
+          body: string
+          delivery_id: string
+          priority: string
+          published_at: string
+          read_at: string | null
+          title: string
+        }[]
+      }
       preview_invitation: {
         Args: {
           invite_token: string
@@ -1088,6 +1109,38 @@ export type Database = {
           organization_code: string
           organization_name: string
           status: string
+        }[]
+      }
+      publish_announcement: {
+        Args: {
+          announcement_body: string
+          announcement_priority: string
+          announcement_title: string
+          excluded_membership_ids: string[]
+          group_ids: string[]
+          membership_ids: string[]
+          request_reference: string
+          sms_fallback_minutes: number | null
+          target_organization: string
+          whole_organization: boolean
+        }
+        Returns: Json
+      }
+      sent_announcements: {
+        Args: {
+          target_organization: string
+        }
+        Returns: {
+          announcement_id: string
+          audience_mode: string
+          author_role: string
+          body: string
+          mine: boolean
+          priority: string
+          published_at: string
+          read_count: number
+          recipient_count: number
+          title: string
         }[]
       }
       update_organization_identity: {

@@ -15,6 +15,7 @@ import {
   type Person, type Portal, type PublishedAnnouncement, type ThemeMode, type Viewer,
 } from "@/lib/workspace/model";
 import { brandFromAccess } from "@/lib/workspace/access";
+import type { AnnouncementItem } from "@/lib/supabase/announcements";
 
 type Notice = { type: "success" | "error"; text: string };
 const NOTICE_MS = 4_000;
@@ -65,8 +66,58 @@ export function Workspace(props: WorkspaceProps) {
 
   const closeModal = useCallback(() => setModal(null), []);
 
-  // A signed-in owner works on the saved organization directory; everyone else uses preview data.
-  const savedDirectory = viewer.signedIn && portal === "creator" && Boolean(brand.organizationId) && getPublicSupabaseConfig() !== null;
+  // Signed-in people work on real organization data; everyone else uses preview data in memory.
+  const connected = viewer.signedIn && Boolean(brand.organizationId) && getPublicSupabaseConfig() !== null;
+  // The saved directory is owner-only.
+  const savedDirectory = connected && portal === "creator";
+  const [savedAnnouncements, setSavedAnnouncements] = useState<AnnouncementItem[]>([]);
+  const [publishingGroups, setPublishingGroups] = useState<Group[]>([]);
+
+  // Owners and leaders see what they sent; members see their inbox. Leaders also need their publishing scope.
+  const fetchAnnouncements = useCallback(async (): Promise<{ items: AnnouncementItem[]; groups?: Group[] }> => {
+    const [{ getBrowserClient }, announcementsApi] = await Promise.all([import("@/lib/supabase/browser-auth"), import("@/lib/supabase/announcements")]);
+    const client = getBrowserClient();
+    if (portal === "member") return { items: await announcementsApi.loadInbox(client, brand.organizationId!) };
+    const [items, groups] = await Promise.all([
+      announcementsApi.loadSentAnnouncements(client, brand.organizationId!),
+      portal === "authority" ? announcementsApi.loadPublishingGroups(client, brand.organizationId!) : Promise.resolve(undefined),
+    ]);
+    return { items, groups };
+  }, [portal, brand.organizationId]);
+
+  const loadAnnouncements = useCallback(async () => {
+    if (!connected) return;
+    const result = await fetchAnnouncements();
+    setSavedAnnouncements(result.items);
+    if (result.groups) setPublishingGroups(result.groups);
+  }, [connected, fetchAnnouncements]);
+
+  useEffect(() => {
+    if (!connected) return;
+    let active = true;
+    void (async () => {
+      try {
+        const result = await fetchAnnouncements();
+        if (!active) return;
+        setSavedAnnouncements(result.items);
+        if (result.groups) setPublishingGroups(result.groups);
+      } catch (error) {
+        if (active) notify("error", error instanceof Error ? error.message : "Announcements could not be loaded.");
+      }
+    })();
+    return () => { active = false; };
+  }, [connected, fetchAnnouncements, notify]);
+
+  const markRead = async (item: AnnouncementItem) => {
+    if (!item.deliveryId) return;
+    try {
+      const [{ getBrowserClient }, { markAnnouncementRead }] = await Promise.all([import("@/lib/supabase/browser-auth"), import("@/lib/supabase/announcements")]);
+      const readAt = await markAnnouncementRead(getBrowserClient(), item.deliveryId);
+      setSavedAnnouncements((items) => items.map((entry) => (entry.deliveryId === item.deliveryId ? { ...entry, readAt } : entry)));
+    } catch (error) {
+      notify("error", error instanceof Error ? error.message : "The announcement could not be marked as read.");
+    }
+  };
   // savedDirectory cannot change while the workspace is mounted, so loading starts immediately.
   const [directoryState, setDirectoryState] = useState<"idle" | "loading" | "ready" | "error">(() => (savedDirectory ? "loading" : "idle"));
 
@@ -154,7 +205,19 @@ export function Workspace(props: WorkspaceProps) {
     notify("success", "Preview branding applied locally across all three portals.");
   };
 
-  const publish = (draft: AnnouncementDraft) => {
+  const publish = async (draft: AnnouncementDraft) => {
+    if (connected) {
+      // Errors are thrown back to the composer, which shows them and lets the author retry.
+      const [{ getBrowserClient }, { publishAnnouncement }] = await Promise.all([import("@/lib/supabase/browser-auth"), import("@/lib/supabase/announcements")]);
+      const result = await publishAnnouncement(getBrowserClient(), brand.organizationId!, draft);
+      notify("success", result.duplicate
+        ? "This announcement was already published; no copy was sent."
+        : `Announcement delivered to ${result.recipientCount} ${result.recipientCount === 1 ? "member's inbox" : "members' inboxes"}.`);
+      await loadAnnouncements().catch(() => undefined);
+      if (portal === "creator") setCreatorView("announcements");
+      else setAuthorityView("history");
+      return;
+    }
     const sender = portal === "creator" ? "Organization owner" : "Authorized leader";
     // Same idempotency rule as the server: one announcement per client request id.
     setAnnouncements((items) => items.some((item) => item.id === draft.clientRequestId)
@@ -174,7 +237,13 @@ export function Workspace(props: WorkspaceProps) {
 
   // The preview has no signed-in leader, so the authority portal uses every audience the owner has assigned.
   const assignedScopes = new Set(authorities.map((authority) => authority.scope));
-  const authorityGroups = groups.filter((group) => assignedScopes.has(group.name));
+  const authorityGroups = connected ? publishingGroups : groups.filter((group) => assignedScopes.has(group.name));
+
+  const previewItems: AnnouncementItem[] = announcements.map((item) => ({
+    id: item.id, title: item.title, body: item.body, priority: item.priority, publishedAt: item.sentAt, sender: item.sender,
+    audienceLabel: item.audienceLabel, recipientCount: item.recipientIds.length,
+  }));
+  const shownAnnouncements = connected ? savedAnnouncements : previewItems;
 
   return (
     <main className="app-shell" data-theme={theme} style={brandStyle}>
@@ -184,11 +253,11 @@ export function Workspace(props: WorkspaceProps) {
       {mobileOpen && <button type="button" className="menu-backdrop" onClick={() => setMobileOpen(false)} aria-label="Close navigation" />}
       <section className="content-shell" id="workspace-content">
         {portal === "creator" ? (
-          <CreatorDashboard view={creatorView} setView={setCreatorView} setModal={setModal} warn={(text) => notify("error", text)} people={people} groups={groups} authorities={authorities} brand={brand} announcements={announcements} onPublish={publish} saved={savedDirectory} directoryState={directoryState} />
+          <CreatorDashboard view={creatorView} setView={setCreatorView} setModal={setModal} warn={(text) => notify("error", text)} people={people} groups={groups} authorities={authorities} brand={brand} announcements={shownAnnouncements} onPublish={publish} saved={savedDirectory} directoryState={directoryState} />
         ) : portal === "authority" ? (
-          <AuthorityDashboard view={authorityView} setView={setAuthorityView} notify={(text) => notify("error", text)} groups={authorityGroups} people={people} announcements={announcements} onPublish={publish} organizationName={brand.name} />
+          <AuthorityDashboard view={authorityView} setView={setAuthorityView} notify={(text) => notify("error", text)} groups={authorityGroups} people={people} announcements={connected ? savedAnnouncements : previewItems.filter((item) => item.sender === "Authorized leader")} onPublish={publish} organizationName={brand.name} saved={connected} />
         ) : (
-          <MemberDashboard view={memberView} theme={theme} setTheme={setTheme} announcements={announcements} />
+          <MemberDashboard view={memberView} theme={theme} setTheme={setTheme} announcements={shownAnnouncements} saved={connected} onMarkRead={markRead} onRefresh={() => { loadAnnouncements().catch(() => notify("error", "Announcements could not be loaded.")); }} />
         )}
         <footer className="workspace-footer">
           <Link href="/privacy">Privacy</Link>

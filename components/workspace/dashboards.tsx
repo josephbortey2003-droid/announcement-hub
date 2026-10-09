@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, Building2, Check, History, Inbox, MessageSquareText, Palette, Plus, Send, ShieldCheck, Sun, UserPlus, Users, WalletCards } from "lucide-react";
+import { Bell, Building2, Check, CheckCheck, History, Inbox, MessageSquareText, Palette, Plus, RefreshCw, Send, ShieldCheck, Sun, UserPlus, Users, WalletCards } from "lucide-react";
+import type { AnnouncementItem } from "@/lib/supabase/announcements";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,32 +11,51 @@ import { EmptyState, Header, OrgAvatar } from "@/components/workspace/chrome";
 import {
   initials, reachablePeople, setupProgress, statusLabel,
   type Authority, type AuthorityView, type BrandData, type CreatorView, type Group, type MemberView, type Modal,
-  type Person, type PublishedAnnouncement, type ThemeMode,
+  type Person, type ThemeMode,
 } from "@/lib/workspace/model";
 
-function AnnouncementRecords({ items, emptyTitle, emptyBody }: { items: PublishedAnnouncement[]; emptyTitle: string; emptyBody: string }) {
+type RecordsProps = {
+  items: AnnouncementItem[];
+  heading: string;
+  subtitle: string;
+  emptyTitle: string;
+  emptyBody: string;
+  /** Members: record that an announcement was read. */
+  onMarkRead?: (item: AnnouncementItem) => void;
+};
+
+function AnnouncementRecords({ items, heading, subtitle, emptyTitle, emptyBody, onMarkRead }: RecordsProps) {
   if (!items.length) return <EmptyState icon={Inbox} title={emptyTitle} body={emptyBody} />;
   return (
     <section className="data-panel published-list">
       <div className="data-head">
-        <div><h2>Published announcements</h2><p>Preview records from this browser session</p></div>
+        <div><h2>{heading}</h2><p>{subtitle}</p></div>
         <span>{items.length} total</span>
       </div>
-      {items.map((item) => (
-        <article key={item.id}>
-          <span className={`priority-marker ${item.priority}`}>{item.priority}</span>
-          <div>
-            <h3>{item.title}</h3>
-            <p>{item.body}</p>
-            <footer>
-              <span>{item.audienceLabel}</span>
-              <span>{item.recipientIds.length} {item.recipientIds.length === 1 ? "recipient" : "recipients"}</span>
-              <span>{item.sender}</span>
-              <time dateTime={item.sentAt}>{new Date(item.sentAt).toLocaleString()}</time>
-            </footer>
-          </div>
-        </article>
-      ))}
+      {items.map((item) => {
+        const unread = item.deliveryId !== undefined && !item.readAt;
+        return (
+          <article key={item.id} className={unread ? "unread" : undefined}>
+            <span className={`priority-marker ${item.priority}`}>{item.priority}</span>
+            <div>
+              <h3>{unread && <span className="unread-badge">New</span>}{item.title}</h3>
+              <p>{item.body}</p>
+              <footer>
+                {item.audienceLabel && <span>{item.audienceLabel}</span>}
+                {item.recipientCount !== undefined && (
+                  <span>{item.recipientCount} {item.recipientCount === 1 ? "recipient" : "recipients"}{item.readCount !== undefined && ` · ${item.readCount} read`}</span>
+                )}
+                <span>{item.sender}</span>
+                <time dateTime={item.publishedAt}>{new Date(item.publishedAt).toLocaleString()}</time>
+                {item.readAt && <span><CheckCheck size={13} /> Read</span>}
+              </footer>
+              {unread && onMarkRead && (
+                <button type="button" className="text-action" onClick={() => onMarkRead(item)}><Check size={15} /> Mark as read</button>
+              )}
+            </div>
+          </article>
+        );
+      })}
     </section>
   );
 }
@@ -49,8 +69,8 @@ type CreatorDashboardProps = {
   groups: Group[];
   authorities: Authority[];
   brand: BrandData;
-  announcements: PublishedAnnouncement[];
-  onPublish: (draft: AnnouncementDraft) => void;
+  announcements: AnnouncementItem[];
+  onPublish: (draft: AnnouncementDraft) => void | Promise<void>;
   /** True when a signed-in owner is working on the saved organization directory. */
   saved: boolean;
   directoryState: "idle" | "loading" | "ready" | "error";
@@ -123,7 +143,13 @@ export function CreatorDashboard({ view, setView, setModal, warn, people, groups
           description="Publish to the whole organization, selected groups or specific people"
           action={<button type="button" className="primary-action" onClick={() => (reachable.length ? setView("compose") : warn(saved ? "Announcements reach people once they accept an invitation. Invite people from the People page." : "Import at least one member before creating an announcement."))}><Plus size={17} /> New announcement</button>}
         />
-        <AnnouncementRecords items={announcements} emptyTitle="No announcements published" emptyBody="Create an announcement, build its audience and review the resolved recipients before publishing." />
+        <AnnouncementRecords
+          items={announcements}
+          heading="Published announcements"
+          subtitle={saved ? "Delivered to members' inboxes. Read counts update when you reopen this page." : "Preview records from this browser session"}
+          emptyTitle="No announcements published"
+          emptyBody="Create an announcement, build its audience and review the resolved recipients before publishing."
+        />
       </>
     );
   }
@@ -271,18 +297,22 @@ type AuthorityDashboardProps = {
   notify: (message: string) => void;
   groups: Group[];
   people: Person[];
-  announcements: PublishedAnnouncement[];
-  onPublish: (draft: AnnouncementDraft) => void;
+  /** Announcements this leader sent. */
+  announcements: AnnouncementItem[];
+  onPublish: (draft: AnnouncementDraft) => void | Promise<void>;
   organizationName: string;
+  /** True for a signed-in leader working on real data. */
+  saved: boolean;
 };
 
-export function AuthorityDashboard({ view, setView, notify, groups, people, announcements, onPublish, organizationName }: AuthorityDashboardProps) {
-  const scopedPeople = people.filter((person) => groups.some((group) => group.name === person.group));
+export function AuthorityDashboard({ view, setView, notify, groups, people, announcements, onPublish, organizationName, saved }: AuthorityDashboardProps) {
+  // A signed-in leader cannot see members' names, so they publish to whole groups and the database counts the recipients.
+  const scopedPeople = saved ? [] : people.filter((person) => groups.some((group) => group.name === person.group));
   if (view === "compose") {
     return (
       <>
         <Header title="Create announcement" description="Only creator-assigned audiences are available" />
-        <AudienceComposer people={scopedPeople} groups={groups} allowOrganization={false} organizationName={organizationName} onCancel={() => setView("inbox")} onPublish={onPublish} />
+        <AudienceComposer people={scopedPeople} groups={groups} allowOrganization={false} organizationName={organizationName} onCancel={() => setView("inbox")} onPublish={onPublish} recipientsCountedOnPublish={saved} />
       </>
     );
   }
@@ -290,7 +320,7 @@ export function AuthorityDashboard({ view, setView, notify, groups, people, anno
     return (
       <>
         <Header title="Sent history" description="Announcements sent from your account" />
-        <AnnouncementRecords items={announcements.filter((item) => item.sender === "Authorized leader")} emptyTitle="No announcements sent" emptyBody="Your sent announcements and verified delivery outcomes will appear here." />
+        <AnnouncementRecords items={announcements} heading="Sent announcements" subtitle={saved ? "With how many recipients have read each one" : "Preview records from this browser session"} emptyTitle="No announcements sent" emptyBody="Your sent announcements and their read counts will appear here." />
       </>
     );
   }
@@ -304,17 +334,31 @@ export function AuthorityDashboard({ view, setView, notify, groups, people, anno
       <section className="scope-card">
         <ShieldCheck size={22} />
         <div>
-          <span>PREVIEW SCOPE</span>
+          <span>{saved ? "YOUR PUBLISHING SCOPE" : "PREVIEW SCOPE"}</span>
           <h2>{groups.length ? groups.map((group) => group.name).join(", ") : "No audience assigned"}</h2>
-          <p>The production server must re-check permission scope for every send. Hiding options in the interface is not sufficient authorization.</p>
+          <p>{saved ? "The database re-checks your scope on every announcement, so you can only reach the groups listed here." : "The production server must re-check permission scope for every send. Hiding options in the interface is not sufficient authorization."}</p>
         </div>
       </section>
-      <EmptyState icon={Inbox} title="No drafts or recent sends" body={groups.length ? "Create an announcement for one of your assigned audiences." : "In the owner portal, create a group and assign authority over it to test scoped publishing."} />
+      {announcements.length ? (
+        <AnnouncementRecords items={announcements.slice(0, 3)} heading="Recent announcements" subtitle="Your latest sends" emptyTitle="" emptyBody="" />
+      ) : (
+        <EmptyState icon={Inbox} title="No recent sends" body={groups.length ? "Create an announcement for one of your assigned audiences." : saved ? "The organization owner has not assigned you an audience yet." : "In the owner portal, create a group and assign authority over it to test scoped publishing."} />
+      )}
     </>
   );
 }
 
-export function MemberDashboard({ view, theme, setTheme, announcements }: { view: MemberView; theme: ThemeMode; setTheme: (theme: ThemeMode) => void; announcements: PublishedAnnouncement[] }) {
+type MemberDashboardProps = {
+  view: MemberView;
+  theme: ThemeMode;
+  setTheme: (theme: ThemeMode) => void;
+  announcements: AnnouncementItem[];
+  saved: boolean;
+  onMarkRead: (item: AnnouncementItem) => void;
+  onRefresh: () => void;
+};
+
+export function MemberDashboard({ view, theme, setTheme, announcements, saved, onMarkRead, onRefresh }: MemberDashboardProps) {
   const [channel, setChannel] = useState("in-app-sms");
   if (view === "preferences") {
     return (
@@ -341,15 +385,30 @@ export function MemberDashboard({ view, theme, setTheme, announcements }: { view
   if (view === "history") {
     return (
       <>
-        <Header title="Announcement history" description="Previously read and archived messages" />
-        <EmptyState icon={History} title="No announcement history" body="Announcements you read or archive will appear here with the sender, department, date and time." />
+        <Header title="Announcement history" description="Announcements you have read" />
+        {saved && announcements.some((item) => item.readAt) ? (
+          <AnnouncementRecords items={announcements.filter((item) => item.readAt)} heading="Read announcements" subtitle="Newest first" emptyTitle="" emptyBody="" />
+        ) : (
+          <EmptyState icon={History} title="No announcement history" body="Announcements you have read will appear here with the sender, date and time." />
+        )}
       </>
     );
   }
   return (
     <>
-      <Header title="Inbox" description="Official announcements from your organization" />
-      <AnnouncementRecords items={announcements} emptyTitle="No announcements" emptyBody="New authorized announcements will appear here with the sender, group, date, time and priority." />
+      <Header
+        title="Inbox"
+        description="Official announcements from your organization"
+        action={saved ? <button type="button" className="secondary" onClick={onRefresh}><RefreshCw size={16} /> Refresh</button> : undefined}
+      />
+      <AnnouncementRecords
+        items={announcements}
+        heading={saved ? `${announcements.filter((item) => !item.readAt).length} unread` : "Published announcements"}
+        subtitle={saved ? "Mark an announcement as read so the sender knows it reached you." : "Preview records from this browser session"}
+        emptyTitle="No announcements"
+        emptyBody="New authorized announcements will appear here with the sender, date, time and priority."
+        onMarkRead={saved ? onMarkRead : undefined}
+      />
     </>
   );
 }

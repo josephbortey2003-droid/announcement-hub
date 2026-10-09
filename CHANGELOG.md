@@ -2,6 +2,79 @@
 
 Every change is listed with **where in the code** it lives, so a reviewer can go straight to the implementation.
 
+## 9 October 2026: real announcements, member inbox and read receipts
+
+Branch: `feature/announcements`
+
+Signed-in owners and leaders now publish announcements that reach members' inboxes. Members mark them as read, and senders see how many recipients have read each one. Preview mode is unchanged.
+
+### Publishing is one database transaction
+
+**Before:** publishing was a server route. It needed the service-role secret (never configured), could not run on GitHub Pages, and wrote records step by step, deleting the draft if a later step failed.
+
+**Now:** `publish_announcement` does everything in one transaction, so either everything is created or nothing is. It:
+- checks that the caller is an active owner or authority;
+- returns the existing announcement for a retried request (same `clientRequestId`) instead of making a copy;
+- validates the priority, the SMS fallback delay (5, 15, 30 or 60 minutes) and the audience size;
+- confirms every group belongs to the organization and every named or excluded person is an active member;
+- for an authority, requires every group to be actively granted and every named person to be inside those groups, and refuses organization-wide sends;
+- resolves recipients (active members; exclusions win; **the author is not sent their own announcement**);
+- creates the announcement, audiences, exclusions and one delivery per recipient (with its SMS fallback due time), plus an audit event.
+
+The browser calls it directly, so no server secret is needed and it works on any host.
+- **Where in the code:** `supabase/migrations/20261009073623_announcement_publishing.sql`: `private.publish_announcement` and its `public` wrapper; `lib/supabase/announcements.ts`: `publishAnnouncement`; `components/workspace/workspace.tsx`: `publish`.
+- `app/api/announcements/publish/route.ts` is now a thin HTTP wrapper around the same function, using the caller's session instead of the service-role key.
+- `lib/announcements/recipients.ts` and its tests were removed. The recipient rules now live in the database function and are covered by database tests.
+
+### Member inbox and read receipts
+
+- `my_announcements` returns the signed-in member's own deliveries (row-level security applies), newest first, with read status.
+- `mark_announcement_read` records a read receipt for the member's own delivery; calling it again changes nothing. A recorded read receipt also stops that person's SMS fallback.
+- The Inbox shows an unread count, a **New** badge and a **Mark as read** button, plus a **Refresh** button. History lists read announcements.
+- **Where in the code:** the same migration; `lib/supabase/announcements.ts`: `loadInbox`, `markAnnouncementRead`; `components/workspace/dashboards.tsx`: `AnnouncementRecords`, `MemberDashboard`.
+
+### Sent history with read counts
+
+- `sent_announcements` returns every announcement for an owner and only their own for an authority, each with its recipient count and read count. Members are refused.
+- Owners see it under **Announcements**; leaders see it under **Sent history** and in their overview.
+- **Where in the code:** the same migration (`private.sent_announcements`); `lib/supabase/announcements.ts`: `loadSentAnnouncements`.
+
+### Leaders
+
+A signed-in leader's composer lists the groups they hold an active publishing grant for. Leaders cannot see members' names (profiles are private), so they publish to whole groups, and the database counts the recipients when publishing. The composer says so instead of showing zero.
+- **Where in the code:** `lib/supabase/announcements.ts`: `loadPublishingGroups`; `components/announcement/audience-composer.tsx`: `recipientsCountedOnPublish`.
+
+### Composer
+
+- Waits for the database. If publishing fails, it unlocks and shows the reason (for example, "The announcement includes a group outside your authority") so the author can fix it and retry with the same request id.
+- The review step now shows errors.
+- **Where in the code:** `components/announcement/audience-composer.tsx`: `publish`.
+
+### Tests
+
+- **8 new database tests** (34 in total):
+  - members, and owners of other organizations, cannot publish;
+  - an organization-wide send reaches every active member except the author, with SMS due times;
+  - a retry returns the same announcement;
+  - groups, individuals and exclusions combine, with exclusions winning;
+  - an authority is limited to granted groups and the people in them;
+  - an empty audience, unknown people, an unsupported delay and a too-short title are refused;
+  - the inbox shows only the member's own deliveries, and reads are recorded once and only for the owner of the delivery;
+  - sent history gives owners everything and authorities their own, with correct read counts.
+- **5 new unit tests** in `tests/announcements-client.test.mjs`: the exact publish payload, error messages, sent-history and inbox mapping, mark-as-read, and the leader's scope (revoked, expired and non-publishing grants are skipped). 38 unit tests in total.
+
+### Hosted database
+
+Applied to the hosted development project as `20261009073623`. The security advisor reports no issues.
+
+### Not verified
+
+Publishing and reading with real accounts. To test it:
+1. As the owner, invite yourself under a second email address and accept the invitation.
+2. Publish to everyone from the owner account.
+3. As the member, the announcement appears in the inbox; click *Mark as read*.
+4. The owner's Announcements page shows "1 recipient · 1 read" after reopening it.
+
 ## 9 October 2026: member invitations
 
 Branch: `feature/invitations`
