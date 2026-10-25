@@ -1,5 +1,6 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { isValidOrganizationCode, normalizeOrganizationCode } from "@/lib/organizations/code";
+import { normalizeE164 } from "@/lib/sms/phone";
 import { createClient } from "./client";
 import { getPublicSupabaseConfig } from "./config";
 
@@ -28,6 +29,25 @@ export type OrganizationIdentityUpdate = {
   primaryColor: string;
   secondaryColor: string;
   logo: string;
+};
+
+export type WorkspacePerson = {
+  id: string;
+  membershipId?: string;
+  name: string;
+  email: string;
+  phone: string;
+  group: string;
+  status: "staged" | "invited" | "active" | "suspended";
+};
+
+export type WorkspaceGroup = { id: string; name: string; type: string };
+
+export type WorkspacePersonInput = {
+  name: string;
+  email: string;
+  phone: string;
+  group: string;
 };
 
 const PENDING_ORGANIZATION_KEY = "announcement-hub-pending-organization";
@@ -200,6 +220,70 @@ export function subscribeToOrganizationIdentity(client: SupabaseClient, organiza
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "organization_branding", filter: `organization_id=eq.${organizationId}` }, refresh)
     .subscribe();
   return () => { void client.removeChannel(channel); };
+}
+
+export async function loadOrganizationWorkspace(client: SupabaseClient, organizationId: string) {
+  const [{ data: groups, error: groupsError }, { data: directory, error: directoryError }, { data: assignments, error: assignmentsError }] = await Promise.all([
+    client.from("groups").select("id, name, group_type").eq("organization_id", organizationId).order("name"),
+    client.from("organization_directory").select("id, membership_id, full_name, email, phone_e164, onboarding_status").eq("organization_id", organizationId).order("created_at"),
+    client.from("directory_group_assignments").select("directory_entry_id, group_id").eq("organization_id", organizationId),
+  ]);
+  if (groupsError || directoryError || assignmentsError) throw new Error("The organization directory could not be loaded.");
+
+  const workspaceGroups: WorkspaceGroup[] = (groups ?? []).map(group => ({ id: group.id, name: group.name, type: group.group_type }));
+  const groupNames = new Map(workspaceGroups.map(group => [group.id, group.name]));
+  const directoryGroups = new Map<string, string[]>();
+  for (const assignment of assignments ?? []) {
+    const name = groupNames.get(assignment.group_id);
+    if (!name) continue;
+    directoryGroups.set(assignment.directory_entry_id, [...(directoryGroups.get(assignment.directory_entry_id) ?? []), name]);
+  }
+  const people: WorkspacePerson[] = (directory ?? []).map(person => ({
+    id: person.id,
+    membershipId: person.membership_id ?? undefined,
+    name: person.full_name,
+    email: person.email ?? "",
+    phone: person.phone_e164 ?? "",
+    group: (directoryGroups.get(person.id) ?? []).join(", "),
+    status: person.onboarding_status as WorkspacePerson["status"],
+  }));
+  return { people, groups: workspaceGroups };
+}
+
+export async function createOrganizationGroup(client: SupabaseClient, organizationId: string, input: WorkspaceGroup) {
+  const { data: userResult, error: userError } = await client.auth.getUser();
+  if (userError || !userResult.user) throw new Error("Sign in again before creating a group.");
+  const { data, error } = await client.from("groups").insert({
+    organization_id: organizationId,
+    name: input.name.trim(),
+    group_type: input.type.toLowerCase(),
+    created_by: userResult.user.id,
+  }).select("id, name, group_type").single();
+  if (error?.code === "23505") throw new Error("A group with that name already exists in this organization.");
+  if (error || !data) throw new Error("The group could not be created.");
+  return { id: data.id, name: data.name, type: data.group_type } satisfies WorkspaceGroup;
+}
+
+export async function importOrganizationPeople(
+  client: SupabaseClient,
+  organizationId: string,
+  source: "individual" | "csv" | "paste",
+  people: WorkspacePersonInput[]
+) {
+  const entries = people.map(person => ({
+    fullName: person.name.trim(),
+    email: person.email.trim().toLowerCase(),
+    phoneE164: person.phone.trim() ? normalizeE164(person.phone) : "",
+    groupName: person.group.trim(),
+  }));
+  const { error } = await client.rpc("import_directory_entries", {
+    target_organization: organizationId,
+    import_source: source,
+    entries,
+  });
+  if (error?.code === "23505") throw new Error("The import contains an email, phone number, member reference or group that already exists.");
+  if (error) throw new Error(error.message || "The member import could not be completed.");
+  return loadOrganizationWorkspace(client, organizationId);
 }
 
 export async function completePendingOrganization(user: User, client = getBrowserClient()) {
